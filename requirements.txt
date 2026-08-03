@@ -1,0 +1,12 @@
+﻿pyyaml
+requests
+tqdm
+pillow
+pandas
+numpy
+opencv-python
+imagehash
+scikit-learn
+kaggle
+pytest
+ruff

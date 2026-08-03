@@ -1,0 +1,32 @@
+﻿[project]
+name = "archaeosort-dataset-builder"
+version = "0.1.0"
+description = "Reproducible dataset construction pipeline for archaeological computer vision."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { file = "LICENSE" }
+
+authors = [
+    { name = "David Falcon Perez" }
+]
+
+dependencies = [
+    "pyyaml",
+    "requests",
+    "tqdm",
+    "pillow",
+    "pandas",
+    "numpy",
+    "opencv-python",
+    "imagehash",
+    "scikit-learn",
+    "kaggle"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

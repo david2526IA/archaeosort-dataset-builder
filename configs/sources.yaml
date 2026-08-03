@@ -1,0 +1,154 @@
+﻿project:
+  name: ArchaeoSort Dataset V2
+  version: "0.1.0"
+  description: Dataset jerárquico para preclasificación de materiales en yacimientos arqueológicos.
+  target_total_images: 68000
+
+target_classes:
+  natural_rock:
+    target_images: 10000
+  lithic_artifact:
+    target_images: 10000
+  pottery_fragment:
+    target_images: 10000
+  metal_artifact:
+    target_images: 10000
+  bone_fragment:
+    target_images: 5000
+  shell:
+    target_images: 3000
+  modern_contaminant:
+    target_images: 10000
+  unknown:
+    target_images: 10000
+
+sources:
+  - id: archaeomind_kaggle
+    name: ArchaeoMind Images
+    source_type: kaggle
+    reference: abhinavrama22/archaeomind-images
+    status: available
+    enabled: true
+    automatic_download: true
+    license: CC0-1.0
+    license_review_required: false
+    original_classes:
+      - artifact
+      - non_artifact
+    target_mapping:
+      artifact: unknown
+      non_artifact: unknown
+    notes: >
+      Dataset baseline ya utilizado en ArchaeoSort AI V1.
+      Se conservará para comparaciones, pero no será la fuente principal de V2.
+
+  - id: portable_antiquities_scheme
+    name: Portable Antiquities Scheme
+    source_type: web_catalog
+    base_url: https://finds.org.uk/database
+    status: research
+    enabled: false
+    automatic_download: false
+    license: mixed_or_record_specific
+    license_review_required: true
+    attribution_required: true
+    candidate_classes:
+      - metal_artifact
+      - pottery_fragment
+      - lithic_artifact
+      - glass
+      - unknown
+    required_metadata:
+      - record_id
+      - object_type
+      - material
+      - period
+      - image_url
+      - image_license
+      - image_credit
+      - source_url
+    notes: >
+      Fuente masiva de hallazgos arqueológicos. Antes de descargar imágenes
+      hay que comprobar licencia, atribución, límites de acceso y condiciones
+      de reutilización para cada registro.
+
+  - id: ads_archaeology_data_service
+    name: Archaeology Data Service
+    source_type: repository_catalog
+    base_url: https://archaeologydataservice.ac.uk/
+    status: research
+    enabled: false
+    automatic_download: false
+    license: collection_specific
+    license_review_required: true
+    attribution_required: true
+    candidate_classes:
+      - pottery_fragment
+      - lithic_artifact
+      - bone_fragment
+      - shell
+      - natural_rock
+    required_metadata:
+      - collection_id
+      - collection_title
+      - file_url
+      - license
+      - copyright_holder
+      - source_url
+    notes: >
+      ADS contiene imágenes de excavaciones y restos excavados.
+      Cada colección debe revisarse individualmente antes de reutilizar datos.
+
+  - id: archaide
+    name: ArchAIDE
+    source_type: research_project
+    base_url: https://archaeologydataservice.ac.uk/about/projects/archaide/
+    status: research
+    enabled: false
+    automatic_download: false
+    license: pending_review
+    license_review_required: true
+    candidate_classes:
+      - pottery_fragment
+    notes: >
+      Proyecto especializado en reconocimiento automático de fragmentos
+      cerámicos. Debemos localizar los archivos reutilizables y sus licencias.
+
+  - id: pas_wikimedia_commons
+    name: PAS images on Wikimedia Commons
+    source_type: wikimedia_commons
+    base_url: https://commons.wikimedia.org/wiki/Category:Portable_Antiquities_Scheme
+    status: candidate
+    enabled: false
+    automatic_download: false
+    license: file_specific
+    license_review_required: true
+    attribution_required: true
+    candidate_classes:
+      - metal_artifact
+      - pottery_fragment
+      - lithic_artifact
+      - unknown
+    notes: >
+      Posible fuente masiva con metadatos y licencias por archivo.
+      Se estudiará mediante la API de Wikimedia Commons.
+
+pipeline:
+  preserve_original_files: true
+  preserve_source_metadata: true
+  compute_sha256: true
+  detect_corrupted_images: true
+  remove_exact_duplicates: true
+  detect_near_duplicates: true
+  normalize_color_mode: RGB
+  output_format: jpg
+  minimum_width: 224
+  minimum_height: 224
+  manual_review_required: true
+
+splits:
+  train: 0.70
+  validation: 0.15
+  test: 0.15
+  group_by_source_record: true
+  prevent_source_leakage: true

@@ -1,0 +1,47 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Entornos virtuales
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Credenciales
+.env
+*.env
+kaggle.json
+access_token
+
+# Datos descargados y procesados
+data/downloads/*
+data/staging/*
+data/processed/*
+data/metadata/*
+
+!data/downloads/.gitkeep
+!data/staging/.gitkeep
+!data/processed/.gitkeep
+!data/metadata/.gitkeep
+
+# Resultados
+outputs/*
+!outputs/.gitkeep
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
