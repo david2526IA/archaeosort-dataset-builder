@@ -1,0 +1,19 @@
+{
+    "seed": 42,
+    "mode": "hardlink_or_copy",
+    "splits": {
+        "train": {
+            "artifact": 471,
+            "non_artifact": 470
+        },
+        "val": {
+            "artifact": 100,
+            "non_artifact": 100
+        },
+        "test": {
+            "artifact": 102,
+            "non_artifact": 102
+        }
+    },
+    "total_images": 1345
+}
