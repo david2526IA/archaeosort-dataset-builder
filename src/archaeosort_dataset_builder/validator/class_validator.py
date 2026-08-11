@@ -1,5 +1,4 @@
-﻿from pathlib import Path
-
+from pathlib import Path
 
 VALID_EXTENSIONS = {
     ".jpg",
@@ -22,11 +21,8 @@ def validate_classes(dataset_root: Path) -> list[str]:
         return issues
 
     for class_dir in class_dirs:
-
         image_count = sum(
-            1
-            for file in class_dir.rglob("*")
-            if file.suffix.lower() in VALID_EXTENSIONS
+            1 for file in class_dir.rglob("*") if file.suffix.lower() in VALID_EXTENSIONS
         )
 
         if image_count == 0:

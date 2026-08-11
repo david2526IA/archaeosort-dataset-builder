@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -28,8 +28,8 @@ def create_manifest(dataset_dir: Path) -> dict:
             total_size += file.stat().st_size
 
     return {
-        "version": datetime.now().strftime("%Y.%m.%d.%H%M%S"),
-        "created": datetime.now().isoformat(),
+        "version": datetime.now(UTC).strftime("%Y.%m.%d.%H%M%S"),
+        "created": datetime.now(UTC).isoformat(),
         "dataset": dataset_dir.name,
         "files": total_files,
         "size_bytes": total_size,

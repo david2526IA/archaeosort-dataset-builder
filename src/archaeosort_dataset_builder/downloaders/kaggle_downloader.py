@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -71,9 +71,7 @@ def download_kaggle_source(
     zip_files = list(source_dir.glob("*.zip"))
 
     if not zip_files:
-        raise FileNotFoundError(
-            f"No se encontró ningún ZIP en {source_dir.resolve()}"
-        )
+        raise FileNotFoundError(f"No se encontró ningún ZIP en {source_dir.resolve()}")
 
     return zip_files[0]
 
@@ -108,9 +106,7 @@ def main() -> None:
     args = parse_args()
 
     if not args.config.exists():
-        raise FileNotFoundError(
-            f"No existe el manifiesto: {args.config.resolve()}"
-        )
+        raise FileNotFoundError(f"No existe el manifiesto: {args.config.resolve()}")
 
     manifest = load_manifest(args.config)
 

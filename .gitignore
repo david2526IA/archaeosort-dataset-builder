@@ -45,3 +45,6 @@ desktop.ini
 # Logs
 *.log
 logs/
+
+# Generated analysis reports
+reports/

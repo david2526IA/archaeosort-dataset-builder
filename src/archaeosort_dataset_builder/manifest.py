@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 
 REQUIRED_SOURCE_FIELDS = {
     "id",
@@ -41,15 +40,13 @@ def parse_args() -> argparse.Namespace:
 
 def load_manifest(config_path: Path) -> dict[str, Any]:
     if not config_path.exists():
-        raise FileNotFoundError(
-            f"No existe el manifiesto: {config_path.resolve()}"
-        )
+        raise FileNotFoundError(f"No existe el manifiesto: {config_path.resolve()}")
 
     with config_path.open("r", encoding="utf-8-sig") as file:
         manifest = yaml.safe_load(file)
 
     if not isinstance(manifest, dict):
-        raise ValueError("El manifiesto debe contener un objeto YAML principal.")
+        raise TypeError("El manifiesto debe contener un objeto YAML principal.")
 
     return manifest
 
@@ -66,7 +63,7 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         "splits",
     ):
         if section not in manifest:
-            errors.append(f"Falta la sección obligatoria: {section}")
+            errors.append(f"Falta la secciÃ³n obligatoria: {section}")
 
     if errors:
         return {
@@ -83,8 +80,7 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     declared_total = int(project.get("target_total_images", 0))
 
     calculated_total = sum(
-        int(class_config.get("target_images", 0))
-        for class_config in target_classes.values()
+        int(class_config.get("target_images", 0)) for class_config in target_classes.values()
     )
 
     if declared_total != calculated_total:
@@ -97,7 +93,7 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         errors.append("No se han definido clases objetivo.")
 
     if not isinstance(sources, list) or not sources:
-        errors.append("La lista de fuentes está vacía o no es válida.")
+        errors.append("La lista de fuentes estÃ¡ vacÃ­a o no es vÃ¡lida.")
         sources = []
 
     source_ids: set[str] = set()
@@ -109,8 +105,7 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
 
         if missing_fields:
             errors.append(
-                f"La fuente {source_name} no contiene: "
-                f"{', '.join(sorted(missing_fields))}"
+                f"La fuente {source_name} no contiene: {', '.join(sorted(missing_fields))}"
             )
 
         source_id = source.get("id")
@@ -120,23 +115,18 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         elif source_id:
             source_ids.add(source_id)
 
-        automatic_download = bool(
-            source.get("automatic_download", False)
-        )
-        review_required = bool(
-            source.get("license_review_required", True)
-        )
+        automatic_download = bool(source.get("automatic_download", False))
+        review_required = bool(source.get("license_review_required", True))
 
         if automatic_download and review_required:
             errors.append(
-                f"La fuente {source_name} permite descarga automática "
-                "pero su licencia requiere revisión."
+                f"La fuente {source_name} permite descarga automÃ¡tica "
+                "pero su licencia requiere revisiÃ³n."
             )
 
         if source.get("enabled") and source.get("status") != "available":
             warnings.append(
-                f"La fuente {source_name} está activa pero su estado es "
-                f"{source.get('status')}."
+                f"La fuente {source_name} estÃ¡ activa pero su estado es {source.get('status')}."
             )
 
         if source.get("license") in {
@@ -145,9 +135,7 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
             "unknown",
             "pending_review",
         }:
-            warnings.append(
-                f"La fuente {source_name} no tiene una licencia confirmada."
-            )
+            warnings.append(f"La fuente {source_name} no tiene una licencia confirmada.")
 
     train_ratio = float(splits.get("train", 0))
     validation_ratio = float(splits.get("validation", 0))
@@ -155,15 +143,10 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     split_total = train_ratio + validation_ratio + test_ratio
 
     if abs(split_total - 1.0) > 1e-9:
-        errors.append(
-            "Las particiones no suman 1.0: "
-            f"{split_total:.6f}"
-        )
+        errors.append(f"Las particiones no suman 1.0: {split_total:.6f}")
 
     if not splits.get("prevent_source_leakage", False):
-        warnings.append(
-            "La protección contra fuga de datos entre fuentes está desactivada."
-        )
+        warnings.append("La protecciÃ³n contra fuga de datos entre fuentes estÃ¡ desactivada.")
 
     return {
         "valid": len(errors) == 0,
@@ -172,15 +155,9 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         "calculated_target_images": calculated_total,
         "number_of_classes": len(target_classes),
         "number_of_sources": len(sources),
-        "enabled_sources": [
-            source["id"]
-            for source in sources
-            if source.get("enabled", False)
-        ],
+        "enabled_sources": [source["id"] for source in sources if source.get("enabled", False)],
         "automatic_sources": [
-            source["id"]
-            for source in sources
-            if source.get("automatic_download", False)
+            source["id"] for source in sources if source.get("automatic_download", False)
         ],
         "errors": errors,
         "warnings": warnings,
@@ -200,16 +177,10 @@ def print_report(report: dict[str, Any], output_path: Path) -> None:
     print("ARCHAEOSORT DATASET BUILDER - MANIFEST VALIDATION")
     print("=" * 60)
     print(f"Valid: {report['valid']}")
-    print(
-        "Target images: "
-        f"{report.get('calculated_target_images', 0)}"
-    )
+    print(f"Target images: {report.get('calculated_target_images', 0)}")
     print(f"Classes: {report.get('number_of_classes', 0)}")
     print(f"Sources: {report.get('number_of_sources', 0)}")
-    print(
-        "Enabled sources: "
-        f"{', '.join(report.get('enabled_sources', [])) or 'none'}"
-    )
+    print(f"Enabled sources: {', '.join(report.get('enabled_sources', [])) or 'none'}")
 
     if report["errors"]:
         print()

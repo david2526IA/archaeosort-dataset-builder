@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -7,7 +7,6 @@ import shutil
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
-
 
 IMAGE_EXTENSIONS = {
     ".jpg",
@@ -43,10 +42,7 @@ def validate_ratios(
     total = train_ratio + val_ratio + test_ratio
 
     if abs(total - 1.0) > 1e-9:
-        raise ValueError(
-            "Los ratios deben sumar 1.0. "
-            f"Resultado actual: {total:.6f}"
-        )
+        raise ValueError(f"Los ratios deben sumar 1.0. Resultado actual: {total:.6f}")
 
     if min(train_ratio, val_ratio, test_ratio) < 0:
         raise ValueError("Los ratios no pueden ser negativos.")
@@ -56,17 +52,12 @@ def discover_images_by_class(
     input_dir: Path,
 ) -> dict[str, list[Path]]:
     if not input_dir.exists():
-        raise FileNotFoundError(
-            f"No existe el dataset: {input_dir.resolve()}"
-        )
+        raise FileNotFoundError(f"No existe el dataset: {input_dir.resolve()}")
 
     images_by_class: dict[str, list[Path]] = defaultdict(list)
 
     for image_path in input_dir.rglob("*"):
-        if (
-            image_path.is_file()
-            and image_path.suffix.lower() in IMAGE_EXTENSIONS
-        ):
+        if image_path.is_file() and image_path.suffix.lower() in IMAGE_EXTENSIONS:
             class_name = image_path.parent.name
             images_by_class[class_name].append(image_path)
 
@@ -103,8 +94,7 @@ def prepare_output_directory(
     if output_dir.exists() and any(output_dir.iterdir()):
         if not force:
             raise FileExistsError(
-                "La carpeta de salida ya contiene archivos. "
-                "Usa --force para regenerarla."
+                "La carpeta de salida ya contiene archivos. Usa --force para regenerarla."
             )
 
         shutil.rmtree(output_dir)
@@ -160,15 +150,8 @@ def build_split_dataset(
             report["total_images"] += len(image_paths)
 
             for index, image_path in enumerate(image_paths):
-                destination_name = (
-                    f"{index:06d}_{image_path.name}"
-                )
-                destination_path = (
-                    output_dir
-                    / split_name
-                    / class_name
-                    / destination_name
-                )
+                destination_name = f"{index:06d}_{image_path.name}"
+                destination_path = output_dir / split_name / class_name / destination_name
 
                 transfer_file(
                     source_path=image_path,

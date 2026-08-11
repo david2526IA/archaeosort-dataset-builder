@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -41,21 +41,15 @@ def parse_args() -> argparse.Namespace:
 
 def discover_zip_files(downloads_dir: Path) -> list[Path]:
     if not downloads_dir.exists():
-        raise FileNotFoundError(
-            f"No existe el directorio de descargas: {downloads_dir.resolve()}"
-        )
+        raise FileNotFoundError(f"No existe el directorio de descargas: {downloads_dir.resolve()}")
 
     return sorted(downloads_dir.glob("*/*.zip"))
 
 
 def count_contents(destination: Path) -> tuple[int, int]:
-    file_count = sum(
-        1 for path in destination.rglob("*") if path.is_file()
-    )
+    file_count = sum(1 for path in destination.rglob("*") if path.is_file())
 
-    directory_count = sum(
-        1 for path in destination.rglob("*") if path.is_dir()
-    )
+    directory_count = sum(1 for path in destination.rglob("*") if path.is_dir())
 
     return file_count, directory_count
 
@@ -88,14 +82,12 @@ def extract_zip(
         corrupt_member = archive.testzip()
 
         if corrupt_member is not None:
-            raise zipfile.BadZipFile(
-                f"Archivo corrupto dentro del ZIP: {corrupt_member}"
-            )
+            raise zipfile.BadZipFile(f"Archivo corrupto dentro del ZIP: {corrupt_member}")
 
         archive.extractall(destination)
 
     marker_path.write_text(
-        datetime.now(timezone.utc).isoformat(),
+        datetime.now(UTC).isoformat(),
         encoding="utf-8",
     )
 
@@ -110,11 +102,9 @@ def extract_zip(
         "file_count": file_count,
         "directory_count": directory_count,
         "top_level_entries": sorted(
-            path.name
-            for path in destination.iterdir()
-            if path.name != ".extraction_complete"
+            path.name for path in destination.iterdir() if path.name != ".extraction_complete"
         ),
-        "extracted_at_utc": datetime.now(timezone.utc).isoformat(),
+        "extracted_at_utc": datetime.now(UTC).isoformat(),
     }
 
 

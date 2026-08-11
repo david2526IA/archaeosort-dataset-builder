@@ -1,6 +1,5 @@
-﻿from pathlib import Path
 from collections import Counter
-
+from pathlib import Path
 
 IMAGE_EXTENSIONS = {
     ".jpg",
@@ -22,7 +21,6 @@ def compute_statistics(dataset_root: Path) -> dict:
     extension_counter = Counter()
 
     for file in dataset_root.rglob("*"):
-
         if file.suffix.lower() not in IMAGE_EXTENSIONS:
             continue
 

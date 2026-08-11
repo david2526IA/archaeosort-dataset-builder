@@ -1,4 +1,4 @@
-﻿import json
+import json
 from pathlib import Path
 
 
@@ -21,7 +21,6 @@ def save_report(
         "w",
         encoding="utf-8",
     ) as file:
-
         json.dump(
             report,
             file,
