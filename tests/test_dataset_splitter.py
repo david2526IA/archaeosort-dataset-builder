@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from archaeosort_dataset_builder.splitter.dataset_splitter import validate_ratios
 

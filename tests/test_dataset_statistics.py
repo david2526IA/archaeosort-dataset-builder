@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 from archaeosort_dataset_builder.statistics.dataset_statistics import compute_statistics
 

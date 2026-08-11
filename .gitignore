@@ -48,3 +48,4 @@ logs/
 
 # Generated analysis reports
 reports/
+.coverage
