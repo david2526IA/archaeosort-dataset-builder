@@ -49,3 +49,15 @@ logs/
 # Generated analysis reports
 reports/
 .coverage
+
+# Generated benchmark/test reports
+reports_test/
+reports_benchmark/
+outputs_test/
+outputs_benchmark/
+
+# Generated benchmark/test reports
+reports_test/
+reports_benchmark/
+outputs_test/
+outputs_benchmark/
