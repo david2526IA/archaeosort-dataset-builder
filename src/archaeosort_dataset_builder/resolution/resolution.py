@@ -1,9 +1,9 @@
-import json
+﻿import json
 from pathlib import Path
 
 from PIL import Image
 
-from src.archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.config.settings import settings
 
 
 def resolution(dataset=None):
@@ -51,3 +51,4 @@ def resolution(dataset=None):
     print(f"Small   : {small}")
     print(f"Medium  : {medium}")
     print(f"Large   : {large}")
+

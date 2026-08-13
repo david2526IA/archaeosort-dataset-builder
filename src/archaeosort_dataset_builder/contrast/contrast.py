@@ -1,10 +1,10 @@
-import json
+﻿import json
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
-from src.archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.config.settings import settings
 
 
 def contrast(dataset=None, low_threshold=30, high_threshold=80, max_side=1280):
@@ -22,7 +22,7 @@ def contrast(dataset=None, low_threshold=30, high_threshold=80, max_side=1280):
 
         try:
             with Image.open(img) as image:
-                # Para JPEG solicita una decodificación reducida.
+                # Para JPEG solicita una decodificaciÃ³n reducida.
                 image.draft("L", (max_side, max_side))
                 image = image.convert("L")
 
@@ -74,3 +74,4 @@ def contrast(dataset=None, low_threshold=30, high_threshold=80, max_side=1280):
 
 if __name__ == "__main__":
     contrast()
+

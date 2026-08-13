@@ -1,6 +1,6 @@
-import json
+﻿import json
 
-from src.archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.config.settings import settings
 
 
 def report():
@@ -38,3 +38,4 @@ def report():
     output.write_text("\n".join(html), encoding="utf8")
 
     print(output)
+

@@ -1,9 +1,9 @@
-import json
+﻿import json
 from pathlib import Path
 
 from PIL import Image
 
-from src.archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.config.settings import settings
 
 
 def aspect_ratio(dataset=None):
@@ -49,3 +49,4 @@ def aspect_ratio(dataset=None):
     print(f"Square      : {square}")
     print(f"Landscape   : {landscape}")
     print(f"Portrait    : {portrait}")
+

@@ -1,4 +1,4 @@
-from src.archaeosort_dataset_builder.config.settings import settings
+﻿from archaeosort_dataset_builder.config.settings import settings
 
 
 def statistics():
@@ -27,3 +27,4 @@ def statistics():
 
         else:
             print(f"[--] {f}")
+

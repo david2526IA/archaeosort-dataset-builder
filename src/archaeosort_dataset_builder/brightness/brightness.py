@@ -1,10 +1,10 @@
-import json
+﻿import json
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from src.archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.config.settings import settings
 
 
 def brightness(dataset=None):
@@ -48,3 +48,4 @@ def brightness(dataset=None):
     print(f"Dark     : {dark}")
     print(f"Normal   : {normal}")
     print(f"Bright   : {bright}")
+

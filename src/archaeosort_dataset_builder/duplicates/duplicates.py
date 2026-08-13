@@ -1,14 +1,14 @@
-import hashlib
+﻿import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
 
 from tqdm import tqdm
 
-from src.archaeosort_dataset_builder.config.settings import settings
-from src.archaeosort_dataset_builder.duplicates.phash import phash
-from src.archaeosort_dataset_builder.duplicates.sha256 import sha256
-from src.archaeosort_dataset_builder.duplicates.size_index import size_index
+from archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.duplicates.phash import phash
+from archaeosort_dataset_builder.duplicates.sha256 import sha256
+from archaeosort_dataset_builder.duplicates.size_index import size_index
 
 
 def md5(file):
@@ -83,3 +83,4 @@ def duplicates(dataset=None):
 
     for k, v in report.items():
         print(f"{k:20} {v}")
+

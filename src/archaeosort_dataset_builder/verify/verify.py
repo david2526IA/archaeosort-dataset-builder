@@ -1,10 +1,10 @@
-import json
+﻿import json
 from collections import Counter
 from pathlib import Path
 
 from PIL import Image
 
-from src.archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.config.settings import settings
 
 
 def verify(dataset=None):
@@ -82,3 +82,4 @@ def verify(dataset=None):
     print(f"Report saved to: {report_path}")
 
     return report
+

@@ -1,6 +1,14 @@
-import argparse
+﻿import argparse
 from pathlib import Path
 
+from archaeosort_dataset_builder.analyzer.analyzer import analyze
+from archaeosort_dataset_builder.aspect_ratio.aspect_ratio import aspect_ratio
+from archaeosort_dataset_builder.blur.blur import blur
+from archaeosort_dataset_builder.brightness.brightness import brightness
+from archaeosort_dataset_builder.class_balance.class_balance import class_balance
+from archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.contrast.contrast import contrast
+from archaeosort_dataset_builder.duplicates.duplicates import duplicates
 from archaeosort_dataset_builder.embeddings.audit import semantic_audit
 from archaeosort_dataset_builder.embeddings.build import build_embeddings
 from archaeosort_dataset_builder.embeddings.index import build_index
@@ -8,20 +16,31 @@ from archaeosort_dataset_builder.embeddings.outlier_review import build_outlier_
 from archaeosort_dataset_builder.embeddings.outliers import detect_outliers
 from archaeosort_dataset_builder.embeddings.search import search_similar
 from archaeosort_dataset_builder.pipeline.pipeline import run_pipeline
-from src.archaeosort_dataset_builder.analyzer.analyzer import analyze
-from src.archaeosort_dataset_builder.aspect_ratio.aspect_ratio import aspect_ratio
-from src.archaeosort_dataset_builder.blur.blur import blur
-from src.archaeosort_dataset_builder.brightness.brightness import brightness
-from src.archaeosort_dataset_builder.class_balance.class_balance import class_balance
-from src.archaeosort_dataset_builder.contrast.contrast import contrast
-from src.archaeosort_dataset_builder.duplicates.duplicates import duplicates
-from src.archaeosort_dataset_builder.quality.quality import quality
-from src.archaeosort_dataset_builder.report.report import report
-from src.archaeosort_dataset_builder.resolution.resolution import resolution
-from src.archaeosort_dataset_builder.statistics.statistics import statistics
-from src.archaeosort_dataset_builder.verify.verify import verify
+from archaeosort_dataset_builder.quality.quality import quality
+from archaeosort_dataset_builder.report.report import report
+from archaeosort_dataset_builder.resolution.resolution import resolution
+from archaeosort_dataset_builder.statistics.statistics import statistics
+from archaeosort_dataset_builder.verify.verify import verify
 
 parser = argparse.ArgumentParser(description="ArchaeoSort Dataset Builder")
+
+parser.add_argument(
+    "--dataset",
+    type=Path,
+    help="Path to the dataset directory.",
+)
+parser.add_argument(
+    "--reports",
+    type=Path,
+    default=Path("reports"),
+    help="Directory used to store reports.",
+)
+parser.add_argument(
+    "--outputs",
+    type=Path,
+    default=Path("outputs"),
+    help="Directory used to store generated outputs.",
+)
 
 sub = parser.add_subparsers(dest="command")
 
@@ -73,6 +92,12 @@ outliers_parser.add_argument("--percentile", type=float, default=2.0)
 
 
 args = parser.parse_args()
+
+if args.dataset is not None:
+    settings.set_dataset(args.dataset)
+
+settings.set_reports(args.reports)
+settings.set_outputs(args.outputs)
 
 
 match args.command:
@@ -150,3 +175,7 @@ match args.command:
 
     case _:
         parser.print_help()
+
+
+
+

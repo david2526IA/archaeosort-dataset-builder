@@ -1,7 +1,7 @@
-from collections import defaultdict
+﻿from collections import defaultdict
 from pathlib import Path
 
-from src.archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.config.settings import settings
 
 
 def size_index(dataset=None):
@@ -17,3 +17,4 @@ def size_index(dataset=None):
         index[img.stat().st_size].append(img)
 
     return index
+

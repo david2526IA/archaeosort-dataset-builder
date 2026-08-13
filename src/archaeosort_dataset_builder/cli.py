@@ -1,8 +1,8 @@
-import typer
+﻿import typer
 
-from src.archaeosort_dataset_builder.analyzer.analyzer import analyze
-from src.archaeosort_dataset_builder.duplicates.duplicates import duplicates
-from src.archaeosort_dataset_builder.verify.verify import verify
+from archaeosort_dataset_builder.analyzer.analyzer import analyze
+from archaeosort_dataset_builder.duplicates.duplicates import duplicates
+from archaeosort_dataset_builder.verify.verify import verify
 
 app = typer.Typer(no_args_is_help=True, help="ArchaeoSort Dataset Builder")
 
@@ -24,3 +24,4 @@ def duplicates_cmd():
 
 if __name__ == "__main__":
     app()
+

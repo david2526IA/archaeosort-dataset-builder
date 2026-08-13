@@ -1,0 +1,9 @@
+{
+    "low": 669,
+    "normal": 4635,
+    "high": 15,
+    "unreadable": 0,
+    "low_threshold": 30,
+    "high_threshold": 80,
+    "max_analysis_side": 1280
+}

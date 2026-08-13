@@ -1,15 +1,13 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from time import perf_counter
 
 from archaeosort_dataset_builder.analyzer.analyzer import analyze
 from archaeosort_dataset_builder.aspect_ratio.aspect_ratio import aspect_ratio
-from archaeosort_dataset_builder.blur.blur import blur
-from archaeosort_dataset_builder.brightness.brightness import brightness
 from archaeosort_dataset_builder.class_balance.class_balance import class_balance
-from archaeosort_dataset_builder.contrast.contrast import contrast
 from archaeosort_dataset_builder.duplicates.duplicates import duplicates
 from archaeosort_dataset_builder.quality.quality import quality
+from archaeosort_dataset_builder.quality.quality_scan import scan_quality
 from archaeosort_dataset_builder.report.report import report
 from archaeosort_dataset_builder.resolution.resolution import resolution
 from archaeosort_dataset_builder.statistics.statistics import statistics
@@ -17,14 +15,11 @@ from archaeosort_dataset_builder.verify.verify import verify
 
 
 def run_pipeline():
-
     steps = [
         ("verify", verify),
         ("analyze", analyze),
         ("duplicates", duplicates),
-        ("blur", blur),
-        ("brightness", brightness),
-        ("contrast", contrast),
+        ("quality_scan", scan_quality),
         ("resolution", resolution),
         ("aspect", aspect_ratio),
         ("classes", class_balance),

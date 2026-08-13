@@ -1,0 +1,8 @@
+{
+    "dark": 1,
+    "normal": 2794,
+    "bright": 2524,
+    "dark_threshold": 60,
+    "bright_threshold": 190,
+    "max_analysis_side": 1280
+}

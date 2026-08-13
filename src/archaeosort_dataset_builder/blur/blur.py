@@ -1,11 +1,11 @@
-import json
+﻿import json
 from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
-from src.archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.config.settings import settings
 
 
 def blur(dataset=None, threshold=100, max_side=1280):
@@ -66,3 +66,4 @@ def blur(dataset=None, threshold=100, max_side=1280):
 
 if __name__ == "__main__":
     blur()
+

@@ -1,10 +1,10 @@
-import statistics
+﻿import statistics
 from collections import Counter
 from pathlib import Path
 
 from PIL import Image
 
-from src.archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.config.settings import settings
 
 
 def analyze(dataset=None):
@@ -56,3 +56,4 @@ def analyze(dataset=None):
 
     for k, v in formats.items():
         print(f"{k:10} {v}")
+

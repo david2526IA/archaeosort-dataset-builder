@@ -1,0 +1,11 @@
+{
+    "dataset": "C:\\Users\\farqu\\Desktop\\proyectos\\archaeosort-datasets\\datasets\\v2\\stone_figshare",
+    "exists": true,
+    "directories": 2,
+    "images": 5319,
+    "empty_files": 0,
+    "corrupted_images": 0,
+    "extensions": {
+        ".jpg": 5319
+    }
+}

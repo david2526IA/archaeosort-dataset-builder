@@ -1,4 +1,4 @@
-from archaeosort_dataset_builder.pipeline import pipeline
+﻿from archaeosort_dataset_builder.pipeline import pipeline
 
 
 def test_pipeline_executes_all_steps_in_order(monkeypatch):
@@ -8,9 +8,7 @@ def test_pipeline_executes_all_steps_in_order(monkeypatch):
         "verify",
         "analyze",
         "duplicates",
-        "blur",
-        "brightness",
-        "contrast",
+        "scan_quality",
         "resolution",
         "aspect_ratio",
         "class_balance",

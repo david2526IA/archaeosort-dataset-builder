@@ -1,47 +1,97 @@
+﻿from __future__ import annotations
+
 import json
 from pathlib import Path
 
-from src.archaeosort_dataset_builder.config.settings import settings
+from archaeosort_dataset_builder.config.settings import settings
+
+SPLIT_NAMES = {"train", "val", "test"}
 
 
-def class_balance(dataset=None):
+def _count_images(directory: Path) -> int:
+    return sum(
+        1
+        for path in directory.rglob("*")
+        if path.is_file() and path.suffix.lower() in settings.image_extensions
+    )
 
-    dataset = Path(dataset) if dataset else settings.dataset
 
-    classes = {}
+def compute_class_balance(dataset: Path) -> dict:
+    dataset = Path(dataset)
 
-    for split in ["train", "val", "test"]:
-        split_dir = dataset / split
+    if not dataset.exists():
+        raise FileNotFoundError(f"Dataset not found: {dataset}")
 
-        if not split_dir.exists():
-            continue
+    directories = [path for path in dataset.iterdir() if path.is_dir()]
+    directory_names = {path.name.lower() for path in directories}
 
-        for cls in split_dir.iterdir():
-            if not cls.is_dir():
+    classes: dict[str, int] = {}
+
+    # Layout A:
+    # dataset/train/class_a
+    # dataset/val/class_a
+    # dataset/test/class_a
+    if directory_names & SPLIT_NAMES:
+        layout = "split"
+
+        for split_name in ("train", "val", "test"):
+            split_dir = dataset / split_name
+
+            if not split_dir.is_dir():
                 continue
 
-            count = 0
+            for class_dir in split_dir.iterdir():
+                if not class_dir.is_dir():
+                    continue
 
-            for img in cls.rglob("*"):
-                if img.suffix.lower() in settings.image_extensions:
-                    count += 1
+                count = _count_images(class_dir)
+                classes[class_dir.name] = classes.get(class_dir.name, 0) + count
 
-            classes[cls.name] = classes.get(cls.name, 0) + count
+    # Layout B:
+    # dataset/class_a
+    # dataset/class_b
+    else:
+        layout = "class_folders"
+
+        for class_dir in directories:
+            count = _count_images(class_dir)
+
+            if count > 0:
+                classes[class_dir.name] = count
 
     total = sum(classes.values())
 
-    report = {"classes": classes, "total": total}
+    return {
+        "layout": layout,
+        "classes": classes,
+        "total": total,
+    }
+
+
+def class_balance(dataset=None):
+    dataset_path = Path(dataset) if dataset else settings.dataset
+
+    report = compute_class_balance(dataset_path)
 
     settings.reports.mkdir(parents=True, exist_ok=True)
 
-    with open(settings.reports / "class_balance.json", "w") as f:
-        json.dump(report, f, indent=4)
+    output = settings.reports / "class_balance.json"
+    output.write_text(
+        json.dumps(report, indent=4, ensure_ascii=False),
+        encoding="utf8",
+    )
 
     print("=" * 60)
     print("CLASS BALANCE")
     print("=" * 60)
+    print(f"Layout : {report['layout']}")
+    print(f"Total  : {report['total']}")
+    print()
 
-    for cls, count in sorted(classes.items()):
+    total = report["total"]
+
+    for cls, count in sorted(report["classes"].items()):
         pct = (count / total * 100) if total else 0
-
         print(f"{cls:25} {count:5d} ({pct:.2f}%)")
+
+    return report
