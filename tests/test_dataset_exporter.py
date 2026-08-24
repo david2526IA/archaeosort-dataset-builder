@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from archaeosort_dataset_builder.exporter.dataset_exporter import main
+from archaeosort_dataset_builder.exporter.dataset_exporter import ExportError, export_dataset, main
 
 
 def test_export_dataset(tmp_path: Path, monkeypatch):
@@ -38,7 +38,10 @@ def test_export_dataset(tmp_path: Path, monkeypatch):
     assert (output_dir / "natural_rock" / "rock.jpg").exists()
 
 
-def test_export_replaces_existing_output(tmp_path: Path, monkeypatch):
+def test_export_refuses_non_empty_output_without_force(tmp_path: Path, monkeypatch):
+    # Fase E hardening: exporting into a non-empty output directory must now
+    # be refused unless --force / force=True is given explicitly (previously
+    # it deleted the existing output unconditionally).
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"
 
@@ -60,10 +63,59 @@ def test_export_replaces_existing_output(tmp_path: Path, monkeypatch):
         ],
     )
 
+    with pytest.raises(FileExistsError):
+        main()
+
+    assert (output_dir / "old.txt").exists()
+
+
+def test_export_replaces_existing_output_with_force(tmp_path: Path, monkeypatch):
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    (input_dir / "new.txt").write_text("new", encoding="utf8")
+    (output_dir / "old.txt").write_text("old", encoding="utf8")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "dataset_exporter",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--force",
+        ],
+    )
+
     main()
 
     assert (output_dir / "new.txt").exists()
     assert not (output_dir / "old.txt").exists()
+
+
+def test_export_dataset_rejects_input_equal_to_output(tmp_path: Path):
+    same_dir = tmp_path / "same"
+    same_dir.mkdir()
+
+    with pytest.raises(ExportError):
+        export_dataset(same_dir, same_dir)
+
+
+def test_export_dataset_callable_api_returns_resolved_output(tmp_path: Path):
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir()
+    (input_dir / "a.txt").write_text("a", encoding="utf8")
+
+    result = export_dataset(input_dir, output_dir)
+
+    assert result == output_dir.resolve()
+    assert (output_dir / "a.txt").exists()
 
 
 def test_export_missing_input_raises_error(tmp_path: Path, monkeypatch):

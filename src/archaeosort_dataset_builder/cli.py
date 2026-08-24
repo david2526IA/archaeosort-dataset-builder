@@ -220,6 +220,59 @@ def outlier_review_cmd(
     build_outlier_contact_sheet(limit=limit)
 
 
+@app.command("build")
+def build_cmd(
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="Directory where the versioned dataset will be written."),
+    ],
+    train: Annotated[
+        float,
+        typer.Option("--train", help="Train split ratio."),
+    ] = 0.70,
+    val: Annotated[
+        float,
+        typer.Option("--val", help="Validation split ratio."),
+    ] = 0.15,
+    test: Annotated[
+        float,
+        typer.Option("--test", help="Test split ratio."),
+    ] = 0.15,
+    seed: Annotated[
+        int,
+        typer.Option("--seed", help="Random seed for the deterministic split."),
+    ] = 42,
+    copy: Annotated[
+        bool,
+        typer.Option("--copy", help="Copy files instead of hardlinking."),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Overwrite a non-empty output directory."),
+    ] = False,
+) -> None:
+    """Build a reproducible, versioned train/val/test dataset."""
+    from archaeosort_dataset_builder.builder.dataset_builder import build_dataset
+
+    source = settings.require_dataset()
+
+    result = build_dataset(
+        dataset=source,
+        output=output,
+        train_ratio=train,
+        val_ratio=val,
+        test_ratio=test,
+        seed=seed,
+        copy_files=copy,
+        force=force,
+    )
+
+    typer.echo(f"Dataset built at: {result['output_dir']}")
+    typer.echo(f"Split report: {result['split_report_path']}")
+    typer.echo(f"Provenance:   {result['provenance_path']}")
+    typer.echo(f"Manifest:     {result['manifest_path']}")
+
+
 @app.command("pipeline")
 def pipeline_cmd(
     full: Annotated[

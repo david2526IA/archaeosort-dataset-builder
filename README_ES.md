@@ -101,6 +101,34 @@ Para ejecutar el pipeline completo:
 uv run --no-sync python builder.py pipeline
 ```
 
+## Build (dataset versionado y reproducible)
+
+`archaeosort build` convierte un dataset de origen organizado por carpetas de clase en un dataset train/val/test versionado, reutilizando el splitter determinista ya existente:
+
+```powershell
+uv run archaeosort --dataset <ruta-dataset-origen> build --output <ruta-salida> --train 0.70 --val 0.15 --test 0.15 --seed 42 [--copy] [--force]
+```
+
+- `--copy` copia los archivos en vez de usar hardlinks (por defecto se intenta hardlink y se cae a copia si falla).
+- `--force` es obligatorio para sobrescribir una carpeta de salida no vacía; sin él, `build` se niega a tocarla.
+- El dataset de origen y la carpeta de salida deben ser rutas distintas — `build` lo rechaza, porque `--force` puede borrar la carpeta de salida.
+
+Estructura de salida:
+
+```text
+<salida>/
+|-- train/<clase>/...
+|-- val/<clase>/...
+|-- test/<clase>/...
+|-- split_report.json   # recuento de imágenes por split y clase, y el modo usado
+|-- provenance.json      # dataset origen, semilla, ratios, clases, timestamp, modo
+`-- manifest.json         # número de archivos, tamaño y huella SHA-256 determinista
+```
+
+El campo `sha256` de `manifest.json` es una huella de contenido: depende solo de las rutas y bytes de los archivos del dataset (lectura por chunks; `manifest.json`, `split_report.json` y `provenance.json` quedan siempre excluidos — son metadatos del build, no contenido del dataset), nunca del reloj — dos builds con el mismo contenido siempre dan la misma huella. `version`/`created` siguen siendo metadatos basados en timestamp.
+
+`archaeosort build` tiene su propia suite de tests (`tests/test_dataset_builder.py`, `tests/test_cli_build.py`) además de los tests de endurecimiento de exporter/versioning (`tests/test_dataset_exporter.py`, `tests/test_dataset_version.py`).
+
 ## Análisis semántico
 
 El proyecto combina controles tradicionales de calidad de imagen con técnicas modernas de representación visual.

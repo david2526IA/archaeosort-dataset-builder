@@ -61,3 +61,13 @@ reports_test/
 reports_benchmark/
 outputs_test/
 outputs_benchmark/
+
+# Generated dataset builds ("archaeosort build" output) — versioned datasets,
+# kept out of Git per project preference (can be tens of GB, and is fully
+# reproducible from the source dataset + provenance.json).
+datasets/
+
+# Source dataset repository merged into this folder during the 2026-08-24
+# consolidation (raw images, tens of GB) — not meant to live in this repo's
+# Git history either.
+datasets_repo/

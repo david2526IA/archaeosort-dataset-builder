@@ -101,6 +101,34 @@ Run the complete pipeline:
 uv run --no-sync python builder.py pipeline
 ```
 
+## Build (reproducible, versioned dataset)
+
+`archaeosort build` turns a class-folder source dataset into a versioned train/val/test dataset, reusing the existing (deterministic) splitter:
+
+```powershell
+uv run archaeosort --dataset <path-to-source-dataset> build --output <path-to-output> --train 0.70 --val 0.15 --test 0.15 --seed 42 [--copy] [--force]
+```
+
+- `--copy` copies files instead of hardlinking (hardlink with a copy fallback is the default).
+- `--force` is required to overwrite a non-empty output directory; without it, `build` refuses to touch existing output.
+- The source dataset and the output directory must be different paths — `build` refuses to run otherwise, since `--force` can delete the output directory.
+
+Output layout:
+
+```text
+<output>/
+|-- train/<class>/...
+|-- val/<class>/...
+|-- test/<class>/...
+|-- split_report.json   # per-split, per-class image counts and the split mode
+|-- provenance.json      # source dataset, seed, ratios, classes, timestamp, mode
+`-- manifest.json         # file count, size and a deterministic SHA-256 content fingerprint
+```
+
+`manifest.json`'s `sha256` field is a content fingerprint: it depends only on the dataset's file paths and bytes (chunked-read; `manifest.json`, `split_report.json` and `provenance.json` are always excluded — they're build bookkeeping, not dataset content), never on wall-clock time, so two builds of identical content always produce the same fingerprint. `version`/`created` remain timestamp-based metadata.
+
+`archaeosort build` is covered by its own test suite (`tests/test_dataset_builder.py`, `tests/test_cli_build.py`) plus the exporter/versioning hardening tests (`tests/test_dataset_exporter.py`, `tests/test_dataset_version.py`).
+
 ## Semantic Analysis
 
 The project combines traditional dataset-quality checks with modern visual representation learning.
