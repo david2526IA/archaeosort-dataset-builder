@@ -25,6 +25,9 @@ Forma parte del ecosistema **ArchaeoSort-AI** y está orientado a ingeniería de
 - Auditoría semántica del dataset
 - Detección de outliers visuales
 - Hojas de revisión visual para supervisión humana
+- Construcción de datasets train/val/test versionados y reproducibles
+- Preprocesado de aislamiento de objeto (elimina fondo y regla de escala)
+- Clasificador baseline ResNet18 (transfer learning)
 - Pipeline automatizado de extremo a extremo
 - Suite de tests con pytest
 - Linting y formato con Ruff
@@ -128,6 +131,32 @@ Estructura de salida:
 El campo `sha256` de `manifest.json` es una huella de contenido: depende solo de las rutas y bytes de los archivos del dataset (lectura por chunks; `manifest.json`, `split_report.json` y `provenance.json` quedan siempre excluidos — son metadatos del build, no contenido del dataset), nunca del reloj — dos builds con el mismo contenido siempre dan la misma huella. `version`/`created` siguen siendo metadatos basados en timestamp.
 
 `archaeosort build` tiene su propia suite de tests (`tests/test_dataset_builder.py`, `tests/test_cli_build.py`) además de los tests de endurecimiento de exporter/versioning (`tests/test_dataset_exporter.py`, `tests/test_dataset_version.py`).
+
+## Clasificador baseline (Fase G)
+
+`archaeosort train-baseline` entrena un clasificador ResNet18 (transfer learning) sobre un dataset train/val/test generado con `build()` y lo evalúa sobre el split de test:
+
+```powershell
+uv run archaeosort train-baseline --data <ruta-salida-de-build> --output <ruta-carpeta-resultado> --epochs 15 --patience 3 [--batch-size 16] [--lr 0.001] [--freeze-backbone/--no-freeze-backbone] [--seed 42]
+```
+
+Escribe `best_model.pt`, `training_history.json` y `evaluation.json` (un `classification_report` por clase más la matriz de confusión, evaluados sobre el split de test) en `--output`, restaurando el mejor checkpoint según accuracy de validación antes de evaluar (early stopping mediante `--patience`). Usa CUDA automáticamente cuando está disponible, y CPU en caso contrario.
+
+### Recorte de objetos — corrigiendo un problema de shortcut-learning
+
+Un primer entrenamiento sobre las imágenes originales de `stone_figshare` alcanzó un sospechoso **100% de accuracy en test** en solo dos épocas. Se descartó primero la fuga por imágenes duplicadas (`archaeosort duplicates` no encontró ningún grupo de duplicados confirmado entre 5.319 imágenes), y la inspección visual de muestras reveló la causa real: las dos clases se habían fotografiado con montajes de estudio distintos e internamente consistentes (fondos y reglas de escala/etiquetas diferentes). El modelo estaba separando las clases por el estilo fotográfico, no por el contenido del objeto — un caso de manual de sesgo de dataset / shortcut-learning, no un fallo del pipeline de ingeniería de datos en sí.
+
+`archaeosort crop-objects` elimina ese factor de confusión con visión por computador clásica (sin ML, nada que sobreajustar): umbraliza el fondo (mayormente uniforme), localiza el contorno del objeto — priorizando los contornos que no tocan el borde del fotograma, ya que las reglas de escala y etiquetas suelen colocarse en el borde mientras la pieza suele quedar centrada — y recorta a ese cuadro delimitador:
+
+```powershell
+uv run archaeosort crop-objects --source <dataset por carpetas de clase> --output <ruta> [--margin 0.06] [--force]
+```
+
+Replica la estructura `<clase>/` de origen bajo `--output` y escribe `crop_report.json` (recuento por clase de imágenes recortadas / de baja confianza / ilegibles) para poder auditar después los recortes de baja confianza en vez de darlos por buenos sin más.
+
+Reentrenar sobre el dataset recortado dio un resultado creíble de **95,9% de accuracy en test** (100% de precisión / 84,8% de recall en `natural_rock`, 94,6% de precisión / 100% de recall en `stone_artefact` — coherente con el desbalance de clases del dataset origen, 73%/27%, y no con un atajo), claramente por encima de un baseline anterior, con un dataset más pequeño, que alcanzaba el 83%.
+
+`train-baseline` y `crop-objects` tienen su propia suite de tests (`tests/test_classifier_baseline_layout.py`, `tests/test_cli_train_baseline.py`, `tests/test_object_crop.py`, `tests/test_cli_crop_objects.py`).
 
 ## Análisis semántico
 
@@ -275,14 +304,15 @@ Push / Pull Request
 
 ## Roadmap
 
-- Aumentar la cobertura de tests
-- Configuración externa del pipeline
+- API de inferencia (FastAPI) para servir el clasificador baseline
+- Frontend de revisión de predicciones (Next.js)
+- Soporte Docker y CI/CD para el stack completo
+- Integración con active learning
 - Dashboard interactivo
 - Mejorar la detección semántica de duplicados
 - Comparación entre versiones del dataset
-- Integración con active learning
 - Nuevos modelos de embeddings
-- Soporte Docker
+- Isaac Sim: datos sintéticos + simulación de cámara/cinta transportadora
 - Integración con el sistema completo ArchaeoSort-AI
 
 ## Estado del proyecto
@@ -296,7 +326,9 @@ Push / Pull Request
 - Auditoría semántica: implementada
 - Detección de outliers: implementada
 - Pipeline automatizado: implementado
-- Tests: 26 pasando
+- Construcción reproducible de datasets: implementada
+- Preprocesado de aislamiento de objeto: implementado
+- Clasificador baseline (ResNet18, 95,9% de accuracy en test sobre el dataset recortado): implementado
 - CI: configurada
 
 ## Autor

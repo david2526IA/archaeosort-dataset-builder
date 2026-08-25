@@ -273,6 +273,45 @@ def build_cmd(
     typer.echo(f"Manifest:     {result['manifest_path']}")
 
 
+@app.command("crop-objects")
+def crop_objects_cmd(
+    source: Annotated[
+        Path,
+        typer.Option("--source", help="Class-folder dataset to crop (e.g. the raw source used by 'build')."),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="Directory to write the cropped, class-folder-mirrored dataset to."),
+    ],
+    margin: Annotated[
+        float,
+        typer.Option("--margin", min=0.0, help="Extra margin around the detected object, as a fraction of its box."),
+    ] = 0.06,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Overwrite a non-empty output directory."),
+    ] = False,
+) -> None:
+    """Crop each image down to just the object, removing studio background
+    and scale-bar/label cards (classical CV, no ML). Use this before 'build'
+    if a duplicates/quality check didn't explain a suspiciously high
+    classifier accuracy — background/scale-bar style can otherwise leak the
+    class label to the model."""
+    from archaeosort_dataset_builder.preprocessing.object_crop import crop_dataset
+
+    report = crop_dataset(source=source, output=output, margin_frac=margin, force=force)
+
+    typer.echo(f"Cropped dataset: {report['output']}")
+    typer.echo(f"Report:          {report['report_path']}")
+    typer.echo(f"Images: {report['total']['images']}  Cropped: {report['total']['cropped']}  "
+               f"Low-confidence: {report['total']['low_confidence']}  Unreadable: {report['total']['unreadable']}")
+    for class_name, stats in report["classes"].items():
+        typer.echo(
+            f"  {class_name}: {stats['images']} images, {stats['cropped']} cropped, "
+            f"{stats['low_confidence']} low-confidence, {stats['unreadable']} unreadable"
+        )
+
+
 @app.command("pipeline")
 def pipeline_cmd(
     full: Annotated[
@@ -312,6 +351,79 @@ def pipeline_cmd(
     semantic_audit(k=10)
     detect_outliers(k=10, percentile=2.0)
     build_outlier_contact_sheet(limit=30)
+
+
+@app.command("train-baseline")
+def train_baseline_cmd(
+    data: Annotated[
+        Path,
+        typer.Option(
+            "--data",
+            help="Path to a train/val/test dataset, as produced by 'archaeosort build'.",
+        ),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="Directory to write the model and metrics to."),
+    ],
+    epochs: Annotated[
+        int,
+        typer.Option("--epochs", min=1, help="Maximum number of training epochs."),
+    ] = 15,
+    batch_size: Annotated[
+        int,
+        typer.Option("--batch-size", min=1, help="Training batch size."),
+    ] = 16,
+    lr: Annotated[
+        float,
+        typer.Option("--lr", help="Learning rate."),
+    ] = 1e-3,
+    freeze_backbone: Annotated[
+        bool,
+        typer.Option(
+            "--freeze-backbone/--no-freeze-backbone",
+            help="Freeze the pretrained ResNet18 backbone (only train the final layer).",
+        ),
+    ] = False,
+    patience: Annotated[
+        int,
+        typer.Option(
+            "--patience",
+            min=1,
+            help="Stop training after this many epochs without validation improvement.",
+        ),
+    ] = 3,
+    seed: Annotated[
+        int,
+        typer.Option("--seed", help="Random seed."),
+    ] = 42,
+) -> None:
+    """Train a ResNet18 baseline classifier and evaluate it on the test split."""
+    from archaeosort_dataset_builder.classifier.baseline import TrainConfig, train_baseline
+
+    result = train_baseline(
+        TrainConfig(
+            data_dir=data,
+            output_dir=output,
+            epochs=epochs,
+            batch_size=batch_size,
+            learning_rate=lr,
+            freeze_backbone=freeze_backbone,
+            patience=patience,
+            seed=seed,
+        )
+    )
+
+    evaluation = result["evaluation"]
+    typer.echo(f"Model:      {result['model_path']}")
+    typer.echo(f"History:    {result['history_path']}")
+    typer.echo(f"Evaluation: {result['evaluation_path']}")
+    typer.echo(
+        f"Best val accuracy: {evaluation['best_validation_accuracy']:.4f}  "
+        f"Test accuracy: {evaluation['test_accuracy']:.4f}  "
+        f"Epochs run: {evaluation['epochs_run']}/{evaluation['epochs_configured']}"
+        f"{' (stopped early)' if evaluation['stopped_early'] else ''}"
+    )
 
 
 if __name__ == "__main__":

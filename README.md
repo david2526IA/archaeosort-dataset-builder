@@ -25,6 +25,9 @@ It is part of the **ArchaeoSort-AI** ecosystem and focuses on reproducible datas
 - Semantic dataset auditing
 - Visual outlier detection
 - Human-review contact sheets
+- Reproducible, versioned train/val/test dataset builds
+- Object-isolation preprocessing (background/scale-bar removal)
+- ResNet18 baseline classifier (transfer learning)
 - Automated end-to-end pipeline
 - Pytest test suite
 - Ruff linting
@@ -128,6 +131,32 @@ Output layout:
 `manifest.json`'s `sha256` field is a content fingerprint: it depends only on the dataset's file paths and bytes (chunked-read; `manifest.json`, `split_report.json` and `provenance.json` are always excluded — they're build bookkeeping, not dataset content), never on wall-clock time, so two builds of identical content always produce the same fingerprint. `version`/`created` remain timestamp-based metadata.
 
 `archaeosort build` is covered by its own test suite (`tests/test_dataset_builder.py`, `tests/test_cli_build.py`) plus the exporter/versioning hardening tests (`tests/test_dataset_exporter.py`, `tests/test_dataset_version.py`).
+
+## Baseline Classifier (Fase G)
+
+`archaeosort train-baseline` trains a ResNet18 transfer-learning classifier on a `build()`-shaped train/val/test dataset and evaluates it on the held-out test split:
+
+```powershell
+uv run archaeosort train-baseline --data <path-to-build-output> --output <path-to-run-dir> --epochs 15 --patience 3 [--batch-size 16] [--lr 0.001] [--freeze-backbone/--no-freeze-backbone] [--seed 42]
+```
+
+It writes `best_model.pt`, `training_history.json` and `evaluation.json` (a per-class `classification_report` plus a confusion matrix, evaluated on the test split) to `--output`, restoring the best checkpoint by validation accuracy before evaluating (early stopping via `--patience`). Uses CUDA automatically when available, falling back to CPU otherwise.
+
+### Object cropping — fixing a shortcut-learning bug
+
+A first training run on the raw `stone_figshare` source images hit a suspicious **100% test accuracy** after only two epochs. Duplicate-image leakage was ruled out first (`archaeosort duplicates` found 0 confirmed duplicate groups across 5,319 images), then visual inspection of sample images found the real cause: the two classes had been photographed with different, internally-consistent studio setups (different backgrounds, different scale-bar/label-card styles). The model was separating classes by photography style, not object content — a textbook dataset-bias / shortcut-learning failure, not a bug in the dataset-engineering pipeline itself.
+
+`archaeosort crop-objects` removes that confound with classical computer vision (no ML, nothing to overfit): it thresholds the (mostly uniform) background, finds the object's contour — preferring contours that don't touch the frame border, since scale bars and label cards are usually placed at the edge while the specimen is normally centered — and crops to that bounding box:
+
+```powershell
+uv run archaeosort crop-objects --source <class-folder dataset> --output <path> [--margin 0.06] [--force]
+```
+
+It mirrors the source `<class>/` layout under `--output` and writes `crop_report.json` (per-class counts of cropped / low-confidence / unreadable images) so low-confidence crops can be audited later rather than trusted blindly.
+
+Retraining on the cropped dataset produced a believable **95.9% test accuracy** (100% precision / 84.8% recall on `natural_rock`, 94.6% precision / 100% recall on `stone_artefact` — consistent with the 73%/27% class imbalance in the source data, not a shortcut), comfortably ahead of an earlier, smaller-dataset baseline that reached 83%.
+
+`train-baseline` and `crop-objects` are covered by their own test suites (`tests/test_classifier_baseline_layout.py`, `tests/test_cli_train_baseline.py`, `tests/test_object_crop.py`, `tests/test_cli_crop_objects.py`).
 
 ## Semantic Analysis
 
@@ -260,18 +289,27 @@ archaeosort-dataset-builder/
 |-- src/
 |   `-- archaeosort_dataset_builder/
 |       |-- analyzer/
+|       |-- aspect_ratio/
 |       |-- blur/
 |       |-- brightness/
+|       |-- builder/          # archaeosort build (versioned train/val/test datasets)
+|       |-- class_balance/
+|       |-- classifier/       # archaeosort train-baseline (ResNet18 classifier)
+|       |-- config/
 |       |-- contrast/
 |       |-- duplicates/
 |       |-- embeddings/
+|       |-- exporter/
 |       |-- pipeline/
+|       |-- preprocessing/    # archaeosort crop-objects (background/scale-bar removal)
 |       |-- quality/
 |       |-- report/
 |       |-- resolution/
+|       |-- splitter/
 |       |-- statistics/
 |       |-- validator/
-|       `-- verify/
+|       |-- verify/
+|       `-- versioning/
 |-- tests/
 |-- reports/
 `-- .github/workflows/
@@ -290,14 +328,15 @@ archaeosort-dataset-builder/
 
 ## Roadmap
 
-- Increase automated test coverage
-- Configurable pipeline parameters
+- Inference API (FastAPI) serving the baseline classifier
+- Frontend for reviewing predictions (Next.js)
+- Docker support and CI/CD for the full stack
+- Active-learning integration
 - Interactive dataset dashboard
 - Improved semantic duplicate detection
 - Dataset version comparison
-- Active-learning integration
 - Additional embedding backends
-- Docker support
+- Isaac Sim: synthetic training data + camera/conveyor-belt simulation
 - Integration with the complete ArchaeoSort-AI system
 
 ## Status
@@ -311,7 +350,9 @@ archaeosort-dataset-builder/
 - Semantic auditing: implemented
 - Visual outlier detection: implemented
 - Pipeline orchestration: implemented
-- Tests: 26 passing
+- Reproducible dataset builds: implemented
+- Object-isolation preprocessing: implemented
+- Baseline classifier (ResNet18, 95.9% test accuracy on the cropped dataset): implemented
 - CI: configured
 
 ## Author
