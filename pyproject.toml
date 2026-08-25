@@ -36,6 +36,21 @@ dependencies = [
 pythonpath = ["src"]
 testpaths = ["tests"]
 
+# GPU (RTX 5070 / Blackwell, driver reports CUDA 13.2 via nvidia-smi) needs a
+# CUDA-enabled torch/torchvision build instead of the default CPU-only wheels
+# from PyPI. This pins both to PyTorch's own CUDA 13.0 wheel index (cu130),
+# which is forward-compatible with a 13.2 driver. If `uv sync` can't resolve
+# cu130 wheels for this torch/torchvision version, change "cu130" to "cu128"
+# below (CUDA 12.8 wheels also support Blackwell) and re-run `uv sync`.
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cuda" }]
+torchvision = [{ index = "pytorch-cuda" }]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
