@@ -315,6 +315,14 @@ archaeosort-dataset-builder/
 `-- .github/workflows/
 ```
 
+## Documentation
+
+Additional project documentation lives under [`docs/`](docs/):
+
+- [`ROADMAP_ARCHAEOSORT.md`](docs/ROADMAP_ARCHAEOSORT.md) — phased roadmap for the broader ArchaeoSort-AI system (dataset engineering, classifier, inference API, frontend, Isaac Sim).
+- [`ARCHAEOSORT_AGENT_CONTEXT.md`](docs/ARCHAEOSORT_AGENT_CONTEXT.md) — technical handoff notes for AI coding assistants working on this repo.
+- A Spanish-language technical memo (`.docx`) covering the project in more depth.
+
 ## Engineering Goals
 
 - Reproducible dataset construction

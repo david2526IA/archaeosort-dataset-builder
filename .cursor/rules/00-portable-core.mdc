@@ -1,0 +1,27 @@
+---
+description: Portable repo-wide rules for efficient, low-token, high-quality engineering work
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Portable Repo Rules
+
+Apply these rules to every task in this repository:
+
+- Optimize for correctness, low token use, and minimal unnecessary output.
+- Inspect before editing. Do not guess architecture or behavior.
+- Read only the files and sections needed for the task.
+- Make the smallest effective change that fully solves the problem.
+- Reuse existing code before adding new utilities or dependencies.
+- Preserve project style, structure, and naming.
+- Do not rewrite whole files when a targeted edit is enough.
+- Do not revert user work or take destructive actions without permission.
+- If ambiguity is low risk, make a reasonable assumption and state it at the end.
+- Ask only when the ambiguity is blocking or high risk.
+- Keep responses concise; summarize instead of dumping logs or large files.
+- Validate with the smallest relevant check possible.
+- If something could not be verified, say so clearly.
+
+Also follow `REGLAS-IA-PORTABLES.md` when present.
+

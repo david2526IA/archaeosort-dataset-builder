@@ -56,12 +56,6 @@ reports_benchmark/
 outputs_test/
 outputs_benchmark/
 
-# Generated benchmark/test reports
-reports_test/
-reports_benchmark/
-outputs_test/
-outputs_benchmark/
-
 # Generated dataset builds ("archaeosort build" output) — versioned datasets,
 # kept out of Git per project preference (can be tens of GB, and is fully
 # reproducible from the source dataset + provenance.json).
@@ -71,3 +65,14 @@ datasets/
 # consolidation (raw images, tens of GB) — not meant to live in this repo's
 # Git history either.
 datasets_repo/
+
+# Legacy reference material from the pre-consolidation archaeosort-ai
+# checkout (includes a ~45 MB trained-model checkpoint). Kept locally for
+# reference (superseded dataset/classes, see README) — not meant for the
+# public Git history.
+_legacy_archaeosort-ai/
+
+# Per-developer local overrides for AI coding assistants — not shared/team
+# config, so not tracked (the shared instruction files themselves, e.g.
+# CLAUDE.md/AGENTS.md, ARE tracked).
+CLAUDE.local.md

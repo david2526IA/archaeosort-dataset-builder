@@ -291,6 +291,14 @@ Push / Pull Request
     Coverage
 ```
 
+## Documentación
+
+En [`docs/`](docs/) hay documentación adicional del proyecto:
+
+- [`ROADMAP_ARCHAEOSORT.md`](docs/ROADMAP_ARCHAEOSORT.md) — roadmap por fases del sistema ArchaeoSort-AI completo (ingeniería de datos, clasificador, API de inferencia, frontend, Isaac Sim).
+- [`ARCHAEOSORT_AGENT_CONTEXT.md`](docs/ARCHAEOSORT_AGENT_CONTEXT.md) — notas técnicas de contexto para asistentes de IA que trabajen en este repo.
+- Una memoria técnica en español (`.docx`) con el proyecto explicado en más profundidad.
+
 ## Objetivos de ingeniería
 
 - Construcción reproducible de datasets
