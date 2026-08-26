@@ -272,13 +272,15 @@ uv run --no-sync ruff check .
 Ejecutar los tests:
 
 ```powershell
-uv run --no-sync pytest -q
+uv run --no-sync python -m pytest -q
 ```
+
+(`python -m pytest`, no un `pytest` suelto — en algunas máquinas un ejecutable `pytest` en otro punto del `PATH` puede tapar el del `.venv` del proyecto, dando `ModuleNotFoundError` confusos de dependencias que en realidad sí están instaladas.)
 
 Calcular cobertura:
 
 ```powershell
-uv run --no-sync pytest --cov=archaeosort_dataset_builder --cov-report=term-missing
+uv run --no-sync python -m pytest --cov=archaeosort_dataset_builder --cov-report=term-missing
 ```
 
 Cobertura base actual: **21%**.
