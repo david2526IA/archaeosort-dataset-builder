@@ -28,6 +28,7 @@ Forma parte del ecosistema **ArchaeoSort-AI** y está orientado a ingeniería de
 - Construcción de datasets train/val/test versionados y reproducibles
 - Preprocesado de aislamiento de objeto (elimina fondo y regla de escala)
 - Clasificador baseline ResNet18 (transfer learning)
+- API de inferencia FastAPI que sirve el clasificador baseline
 - Pipeline automatizado de extremo a extremo
 - Suite de tests con pytest
 - Linting y formato con Ruff
@@ -158,6 +159,24 @@ Reentrenar sobre el dataset recortado dio un resultado creíble de **95,9% de ac
 
 `train-baseline` y `crop-objects` tienen su propia suite de tests (`tests/test_classifier_baseline_layout.py`, `tests/test_cli_train_baseline.py`, `tests/test_object_crop.py`, `tests/test_cli_crop_objects.py`).
 
+## API de inferencia (Fase H)
+
+`archaeosort serve` carga un checkpoint entrenado una sola vez y lo expone por HTTP con FastAPI + uvicorn:
+
+```powershell
+uv run archaeosort serve --model <ruta-a-best_model.pt> [--host 127.0.0.1] [--port 8000] [--classes natural_rock,stone_artefact] [--device cuda] [--reload]
+```
+
+Si se omite `--classes`, la lista de clases se lee de `evaluation.json`, junto al checkpoint (lo escribe automáticamente `train-baseline`), en el mismo orden que usa la capa de salida del modelo — un `--classes` explícito siempre tiene prioridad.
+
+Endpoints:
+
+- `GET /health` — indica si hay un modelo cargado, su lista de clases y su dispositivo (`cuda`/`cpu`).
+- `POST /predict` — acepta una imagen subida (`multipart/form-data`, campo `file`) y devuelve la clase predicha, su confianza y la distribución de probabilidad completa por clase. Devuelve `503` si el modelo no se pudo cargar y `400` si el archivo subido no es una imagen legible.
+- `GET /docs` — interfaz Swagger interactiva (generada automáticamente por FastAPI).
+
+El contrato HTTP (`/health`, `/predict`, los caminos de error 503/400) está cubierto por `tests/test_api_app.py` usando el `TestClient` de FastAPI contra un modelo falso simulado, así que se ejecuta sin torch ni un checkpoint real. `resolve_classes`/`_read_classes_from_evaluation` (resolución de la lista de clases) tienen sus propios tests unitarios sin torch en `tests/test_api_inference.py`; `tests/test_cli_serve.py` cubre las opciones de la CLI. Cargar un checkpoint real y servir predicciones reales se verifica contra el entorno real del proyecto.
+
 ## Análisis semántico
 
 El proyecto combina controles tradicionales de calidad de imagen con técnicas modernas de representación visual.
@@ -256,12 +275,6 @@ Ejecutar los tests:
 uv run --no-sync pytest -q
 ```
 
-Estado actual:
-
-```text
-26 passed
-```
-
 Calcular cobertura:
 
 ```powershell
@@ -312,7 +325,6 @@ En [`docs/`](docs/) hay documentación adicional del proyecto:
 
 ## Roadmap
 
-- API de inferencia (FastAPI) para servir el clasificador baseline
 - Frontend de revisión de predicciones (Next.js)
 - Soporte Docker y CI/CD para el stack completo
 - Integración con active learning
@@ -337,6 +349,7 @@ En [`docs/`](docs/) hay documentación adicional del proyecto:
 - Construcción reproducible de datasets: implementada
 - Preprocesado de aislamiento de objeto: implementado
 - Clasificador baseline (ResNet18, 95,9% de accuracy en test sobre el dataset recortado): implementado
+- API de inferencia (FastAPI): implementada
 - CI: configurada
 
 ## Autor

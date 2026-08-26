@@ -426,5 +426,57 @@ def train_baseline_cmd(
     )
 
 
+@app.command("serve")
+def serve_cmd(
+    model: Annotated[
+        Path,
+        typer.Option("--model", help="Path to a trained checkpoint (best_model.pt from 'train-baseline')."),
+    ],
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Host/interface to bind the API to."),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", min=1, help="Port to bind the API to."),
+    ] = 8000,
+    classes: Annotated[
+        str | None,
+        typer.Option(
+            "--classes",
+            help="Comma-separated class names, in the model's output order. "
+            "If omitted, read from evaluation.json next to the checkpoint.",
+        ),
+    ] = None,
+    device: Annotated[
+        str | None,
+        typer.Option("--device", help="Force 'cuda' or 'cpu'. Defaults to CUDA if available."),
+    ] = None,
+    reload: Annotated[
+        bool,
+        typer.Option("--reload", help="Auto-reload the API on source changes (development only)."),
+    ] = False,
+) -> None:
+    """Serve the baseline classifier over HTTP (FastAPI + uvicorn)."""
+    import os
+
+    import uvicorn
+
+    from archaeosort_dataset_builder.api.app import (
+        MODEL_CLASSES_ENV,
+        MODEL_DEVICE_ENV,
+        MODEL_PATH_ENV,
+    )
+
+    os.environ[MODEL_PATH_ENV] = str(Path(model).expanduser().resolve())
+    if classes:
+        os.environ[MODEL_CLASSES_ENV] = classes
+    if device:
+        os.environ[MODEL_DEVICE_ENV] = device
+
+    typer.echo(f"Serving {model} on http://{host}:{port} (docs at /docs)")
+    uvicorn.run("archaeosort_dataset_builder.api.app:app", host=host, port=port, reload=reload)
+
+
 if __name__ == "__main__":
     app()
