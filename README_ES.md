@@ -1,4 +1,4 @@
-﻿# ArchaeoSort Dataset Builder
+# ArchaeoSort Dataset Builder
 
 [English](README.md) | **Español**
 
@@ -28,7 +28,8 @@ Forma parte del ecosistema **ArchaeoSort-AI** y está orientado a ingeniería de
 - Construcción de datasets train/val/test versionados y reproducibles
 - Preprocesado de aislamiento de objeto (elimina fondo y regla de escala)
 - Clasificador baseline ResNet18 (transfer learning)
-- API de inferencia FastAPI que sirve el clasificador baseline
+- API de inferencia FastAPI que sirve el clasificador baseline y una búsqueda de similitud visual
+- Frontend en Next.js para clasificar y explorar imágenes similares
 - Pipeline automatizado de extremo a extremo
 - Suite de tests con pytest
 - Linting y formato con Ruff
@@ -161,21 +162,27 @@ Reentrenar sobre el dataset recortado dio un resultado creíble de **95,9% de ac
 
 ## API de inferencia (Fase H)
 
-`archaeosort serve` carga un checkpoint entrenado una sola vez y lo expone por HTTP con FastAPI + uvicorn:
+`archaeosort serve` carga un checkpoint entrenado y/o un índice FAISS de similitud ya construido, y los expone por HTTP con FastAPI + uvicorn. Hace falta al menos uno de `--model` / `--embeddings-dir`; pasa ambos para activar todos los endpoints:
 
 ```powershell
-uv run archaeosort serve --model <ruta-a-best_model.pt> [--host 127.0.0.1] [--port 8000] [--classes natural_rock,stone_artefact] [--device cuda] [--reload]
+uv run archaeosort serve --model <ruta-a-best_model.pt> --embeddings-dir <ruta-a-outputs\embeddings> [--host 127.0.0.1] [--port 8000] [--classes natural_rock,stone_artefact] [--device cuda] [--reload]
 ```
 
 Si se omite `--classes`, la lista de clases se lee de `evaluation.json`, junto al checkpoint (lo escribe automáticamente `train-baseline`), en el mismo orden que usa la capa de salida del modelo — un `--classes` explícito siempre tiene prioridad.
 
 Endpoints:
 
-- `GET /health` — indica si hay un modelo cargado, su lista de clases y su dispositivo (`cuda`/`cpu`).
-- `POST /predict` — acepta una imagen subida (`multipart/form-data`, campo `file`) y devuelve la clase predicha, su confianza y la distribución de probabilidad completa por clase. Devuelve `503` si el modelo no se pudo cargar y `400` si el archivo subido no es una imagen legible.
+- `GET /health` — indica si el clasificador y/o el índice de similitud están cargados, la lista de clases y el dispositivo del clasificador (`cuda`/`cpu`), y el tamaño del índice de similitud.
+- `POST /predict` — acepta una imagen subida (`multipart/form-data`, campo `file`) y devuelve la clase predicha, su confianza y la distribución de probabilidad completa por clase. Devuelve `503` si el clasificador no está cargado y `400` si el archivo subido no es una imagen legible.
+- `POST /similar` — acepta una imagen subida (campo `file`, parámetro opcional `?k=`, por defecto 5) y devuelve las `k` imágenes más similares visualmente del índice FAISS (embedding DINOv2 + similitud coseno), cada una con su rango, puntuación, `path_id` y nombre de archivo. Devuelve `503` si no hay ningún índice de similitud cargado.
+- `GET /similar-image/{path_id}` — sirve los bytes reales de la imagen para un `path_id` devuelto por `/similar`, para que un frontend pueda mostrar miniaturas sin ver nunca la ruta real del sistema de archivos de la máquina donde corre `serve`. Devuelve `404` si el id está fuera de rango o el archivo ya no existe en disco.
 - `GET /docs` — interfaz Swagger interactiva (generada automáticamente por FastAPI).
 
-El contrato HTTP (`/health`, `/predict`, los caminos de error 503/400) está cubierto por `tests/test_api_app.py` usando el `TestClient` de FastAPI contra un modelo falso simulado, así que se ejecuta sin torch ni un checkpoint real. `resolve_classes`/`_read_classes_from_evaluation` (resolución de la lista de clases) tienen sus propios tests unitarios sin torch en `tests/test_api_inference.py`; `tests/test_cli_serve.py` cubre las opciones de la CLI. Cargar un checkpoint real y servir predicciones reales se verifica contra el entorno real del proyecto.
+`/predict` y `/similar` son independientes — un servidor puede correr solo con clasificador, solo con índice de similitud, o con ambos, y cada endpoint falla con un `503` claro en vez de tirar abajo el proceso si su propia dependencia no está configurada. El contrato HTTP de los cuatro endpoints está cubierto por `tests/test_api_app.py` usando el `TestClient` de FastAPI contra modelos/índices falsos simulados, así que se ejecuta sin torch, faiss, un checkpoint real ni un índice real. `resolve_classes`/`_read_classes_from_evaluation` y la lógica de carga/búsqueda del índice FAISS tienen sus propios tests unitarios sin torch en `tests/test_api_inference.py` y `tests/test_api_similarity.py`; `tests/test_cli_serve.py` cubre las opciones de la CLI. Cargar artefactos reales y servir predicciones/búsquedas reales se verifica contra el entorno real del proyecto.
+
+## Frontend (Fase I)
+
+Un frontend mínimo en Next.js + TypeScript + Tailwind vive en [`frontend/`](frontend/): sube una foto, obtén una clasificación con confianza por clase, y explora imágenes visualmente similares — llamando a los endpoints `/predict`, `/similar` y `/similar-image` de arriba. Al cargar consulta `GET /health` y muestra únicamente las funciones que la instancia de `serve` en marcha tiene realmente cargadas. Consulta [`frontend/README.md`](frontend/README.md) para la puesta en marcha (`npm install`, copiar `.env.local.example` a `.env.local`, `npm run dev`). Verificado con `tsc --noEmit`, `eslint` y un `next build` de producción, todo limpio; la verificación end-to-end contra un `archaeosort serve` real queda para el entorno del usuario.
 
 ## Análisis semántico
 
@@ -327,7 +334,6 @@ En [`docs/`](docs/) hay documentación adicional del proyecto:
 
 ## Roadmap
 
-- Frontend de revisión de predicciones (Next.js)
 - Soporte Docker y CI/CD para el stack completo
 - Integración con active learning
 - Dashboard interactivo
@@ -351,7 +357,8 @@ En [`docs/`](docs/) hay documentación adicional del proyecto:
 - Construcción reproducible de datasets: implementada
 - Preprocesado de aislamiento de objeto: implementado
 - Clasificador baseline (ResNet18, 95,9% de accuracy en test sobre el dataset recortado): implementado
-- API de inferencia (FastAPI): implementada
+- API de inferencia (FastAPI, clasificación + búsqueda de similitud visual): implementada
+- Frontend (Next.js): implementado
 - CI: configurada
 
 ## Autor
