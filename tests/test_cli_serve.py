@@ -1,4 +1,4 @@
-"""CLI-level test for 'archaeosort serve' that does not require torch or
+"""CLI-level tests for 'archaeosort serve' that do not require torch or
 uvicorn actually binding a port: --help only exercises Typer's own option
 parsing/help rendering. An actual server start is verified manually against
 the project's real environment, not here.
@@ -21,10 +21,18 @@ def test_serve_help_lists_expected_options():
     result = runner.invoke(app, ["serve", "--help"])
     assert result.exit_code == 0
     rendered = " ".join(result.stdout.split())
-    for flag in ("--model", "--host", "--port", "--classes", "--device", "--reload"):
+    for flag in (
+        "--model",
+        "--embeddings-dir",
+        "--host",
+        "--port",
+        "--classes",
+        "--device",
+        "--reload",
+    ):
         assert flag in rendered
 
 
-def test_serve_requires_model():
+def test_serve_requires_model_or_embeddings_dir():
     result = runner.invoke(app, ["serve"])
     assert result.exit_code != 0

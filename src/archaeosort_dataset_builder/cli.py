@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Annotated
@@ -429,9 +429,18 @@ def train_baseline_cmd(
 @app.command("serve")
 def serve_cmd(
     model: Annotated[
-        Path,
+        Path | None,
         typer.Option("--model", help="Path to a trained checkpoint (best_model.pt from 'train-baseline')."),
-    ],
+    ] = None,
+    embeddings_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--embeddings-dir",
+            help="Directory with a prebuilt FAISS index (dinov2.faiss + dinov2_paths.json), "
+            "as written by 'archaeosort embeddings' + 'archaeosort index'. Enables "
+            "GET /similar and GET /similar-image/{path_id}.",
+        ),
+    ] = None,
     host: Annotated[
         str,
         typer.Option("--host", help="Host/interface to bind the API to."),
@@ -457,24 +466,36 @@ def serve_cmd(
         typer.Option("--reload", help="Auto-reload the API on source changes (development only)."),
     ] = False,
 ) -> None:
-    """Serve the baseline classifier over HTTP (FastAPI + uvicorn)."""
+    """Serve the baseline classifier and/or the visual-similarity search over
+    HTTP (FastAPI + uvicorn). At least one of --model / --embeddings-dir is
+    required; pass both to enable every endpoint."""
     import os
 
     import uvicorn
 
     from archaeosort_dataset_builder.api.app import (
+        EMBEDDINGS_DIR_ENV,
         MODEL_CLASSES_ENV,
         MODEL_DEVICE_ENV,
         MODEL_PATH_ENV,
     )
 
-    os.environ[MODEL_PATH_ENV] = str(Path(model).expanduser().resolve())
-    if classes:
-        os.environ[MODEL_CLASSES_ENV] = classes
-    if device:
-        os.environ[MODEL_DEVICE_ENV] = device
+    if model is None and embeddings_dir is None:
+        raise typer.BadParameter("Pass at least one of --model or --embeddings-dir.")
 
-    typer.echo(f"Serving {model} on http://{host}:{port} (docs at /docs)")
+    served = []
+    if model:
+        os.environ[MODEL_PATH_ENV] = str(Path(model).expanduser().resolve())
+        if classes:
+            os.environ[MODEL_CLASSES_ENV] = classes
+        if device:
+            os.environ[MODEL_DEVICE_ENV] = device
+        served.append(f"classifier ({model})")
+    if embeddings_dir:
+        os.environ[EMBEDDINGS_DIR_ENV] = str(Path(embeddings_dir).expanduser().resolve())
+        served.append(f"similarity index ({embeddings_dir})")
+
+    typer.echo(f"Serving {' + '.join(served)} on http://{host}:{port} (docs at /docs)")
     uvicorn.run("archaeosort_dataset_builder.api.app:app", host=host, port=port, reload=reload)
 
 
