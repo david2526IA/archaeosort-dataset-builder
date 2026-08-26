@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -426,6 +426,89 @@ def train_baseline_cmd(
     )
 
 
+@app.command("build-prototypes")
+def build_prototypes_cmd(
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="Path to write the prototype file to (e.g. outputs/prototypes/dinov2.npz)."),
+    ],
+    references_dir: Annotated[
+        Path,
+        typer.Option(
+            "--references-dir",
+            help="Directory to store/reuse reference images in, one subfolder per category.",
+        ),
+    ] = Path("datasets/prototype_references"),
+    natural_rock_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--natural-rock-dir",
+            help="Existing class-folder of natural_rock images to sample reference photos from "
+            "(e.g. datasets/stone_figshare_cropped/v1/train/natural_rock). Omit to skip that category.",
+        ),
+    ] = None,
+    stone_artefact_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--stone-artefact-dir",
+            help="Existing class-folder of stone_artefact images to sample reference photos from.",
+        ),
+    ] = None,
+    per_class: Annotated[
+        int,
+        typer.Option("--per-class", min=5, help="Reference images to use per category (>= 5)."),
+    ] = 20,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Re-download/re-sample reference images even if references-dir is populated."),
+    ] = False,
+    seed: Annotated[
+        int,
+        typer.Option("--seed", help="Random seed for sampling/shuffling."),
+    ] = 42,
+) -> None:
+    """Build a few-shot prototype classifier (DINOv2 image-embedding
+    nearest-prototype, see prototypes/prototypes.py) covering bone and
+    wood artefacts/naturals in addition to natural_rock/stone_artefact --
+    an alternative to --zero-shot for categories the trained ResNet18
+    classifier was never shown, sourced from the Met Museum Open Access
+    API and Wikimedia Commons (both public, no API key). Requires network
+    access; downloaded reference images and their source URLs are saved
+    under --references-dir for provenance and are reused on a re-run
+    unless --force is passed."""
+    from PIL import Image
+
+    from archaeosort_dataset_builder.prototypes.prototypes import build_prototypes, save_prototypes
+    from archaeosort_dataset_builder.prototypes.reference_dataset import (
+        DEFAULT_SOURCES,
+        CategorySource,
+        build_reference_dataset,
+    )
+
+    sources = dict(DEFAULT_SOURCES)
+    if natural_rock_dir is not None:
+        sources["natural_rock"] = CategorySource(kind="local", local_dir=natural_rock_dir)
+    if stone_artefact_dir is not None:
+        sources["stone_artefact"] = CategorySource(kind="local", local_dir=stone_artefact_dir)
+
+    typer.echo(f"Sourcing reference images into {references_dir} ({len(sources)} categories)...")
+    manifest = build_reference_dataset(references_dir, sources=sources, per_class=per_class, force=force, seed=seed)
+    for label, info in manifest["categories"].items():
+        typer.echo(f"  {label}: {info['count']} images ({'reused' if info.get('reused_existing') else info.get('source')})")
+
+    typer.echo("Embedding reference images and building prototypes (this loads the DINOv2 model)...")
+    reference_images: dict[str, list[Any]] = {}
+    for label in sources:
+        label_dir = Path(references_dir) / label
+        image_paths = sorted(list(label_dir.glob("*.jpg")) + list(label_dir.glob("*.png")))
+        reference_images[label] = [Image.open(p).convert("RGB") for p in image_paths]
+
+    bundle = build_prototypes(reference_images)
+    save_prototypes(bundle, output)
+    typer.echo(f"Prototypes saved: {output}")
+    typer.echo(f"Categories: {', '.join(bundle.labels)}")
+
+
 @app.command("serve")
 def serve_cmd(
     model: Annotated[
@@ -465,10 +548,43 @@ def serve_cmd(
         bool,
         typer.Option("--reload", help="Auto-reload the API on source changes (development only)."),
     ] = False,
+    zero_shot: Annotated[
+        bool,
+        typer.Option(
+            "--zero-shot",
+            help="Enable open-vocabulary classification (POST /classify-open) via a CLIP model "
+            "(default openai/clip-vit-base-patch32, ~600MB, downloaded on first use). Covers "
+            "categories the trained classifier was never shown (e.g. bone or wood artefacts) "
+            "without collecting new training data.",
+        ),
+    ] = False,
+    zero_shot_model: Annotated[
+        str | None,
+        typer.Option("--zero-shot-model", help="Override the CLIP model used for --zero-shot."),
+    ] = None,
+    zero_shot_labels: Annotated[
+        str | None,
+        typer.Option(
+            "--zero-shot-labels",
+            help="Override the default zero-shot categories: semicolon-separated 'label=prompt' "
+            "pairs, e.g. 'natural_rock=a photo of a natural rock;stone_artefact=a photo of a "
+            "worked stone tool'.",
+        ),
+    ] = None,
+    prototypes: Annotated[
+        Path | None,
+        typer.Option(
+            "--prototypes",
+            help="Path to a prototype file built with 'archaeosort build-prototypes'. Enables "
+            "POST /classify-prototype: DINOv2 image-to-image nearest-prototype classification, "
+            "covering bone/wood artefacts and naturals without CLIP or retraining.",
+        ),
+    ] = None,
 ) -> None:
-    """Serve the baseline classifier and/or the visual-similarity search over
-    HTTP (FastAPI + uvicorn). At least one of --model / --embeddings-dir is
-    required; pass both to enable every endpoint."""
+    """Serve the baseline classifier, the visual-similarity search, and/or
+    open-vocabulary classification (CLIP zero-shot and/or DINOv2
+    prototypes) over HTTP (FastAPI + uvicorn). At least one of --model /
+    --embeddings-dir / --zero-shot / --prototypes is required."""
     import os
 
     import uvicorn
@@ -478,10 +594,14 @@ def serve_cmd(
         MODEL_CLASSES_ENV,
         MODEL_DEVICE_ENV,
         MODEL_PATH_ENV,
+        PROTOTYPES_PATH_ENV,
+        ZEROSHOT_LABELS_ENV,
+        ZEROSHOT_MODEL_ENV,
     )
+    from archaeosort_dataset_builder.api.zero_shot import DEFAULT_MODEL_NAME
 
-    if model is None and embeddings_dir is None:
-        raise typer.BadParameter("Pass at least one of --model or --embeddings-dir.")
+    if model is None and embeddings_dir is None and not zero_shot and prototypes is None:
+        raise typer.BadParameter("Pass at least one of --model, --embeddings-dir, --zero-shot, or --prototypes.")
 
     served = []
     if model:
@@ -494,6 +614,14 @@ def serve_cmd(
     if embeddings_dir:
         os.environ[EMBEDDINGS_DIR_ENV] = str(Path(embeddings_dir).expanduser().resolve())
         served.append(f"similarity index ({embeddings_dir})")
+    if zero_shot:
+        os.environ[ZEROSHOT_MODEL_ENV] = zero_shot_model or DEFAULT_MODEL_NAME
+        if zero_shot_labels:
+            os.environ[ZEROSHOT_LABELS_ENV] = zero_shot_labels
+        served.append(f"zero-shot classifier ({zero_shot_model or DEFAULT_MODEL_NAME})")
+    if prototypes:
+        os.environ[PROTOTYPES_PATH_ENV] = str(Path(prototypes).expanduser().resolve())
+        served.append(f"prototype classifier ({prototypes})")
 
     typer.echo(f"Serving {' + '.join(served)} on http://{host}:{port} (docs at /docs)")
     uvicorn.run("archaeosort_dataset_builder.api.app:app", host=host, port=port, reload=reload)

@@ -29,10 +29,35 @@ def test_serve_help_lists_expected_options():
         "--classes",
         "--device",
         "--reload",
+        "--zero-shot",
+        "--zero-shot-model",
+        "--zero-shot-labels",
+        "--prototypes",
     ):
         assert flag in rendered
 
 
-def test_serve_requires_model_or_embeddings_dir():
+def test_serve_requires_model_or_embeddings_dir_or_zero_shot():
     result = runner.invoke(app, ["serve"])
+    assert result.exit_code != 0
+
+
+def test_build_prototypes_help_lists_expected_options():
+    result = runner.invoke(app, ["build-prototypes", "--help"])
+    assert result.exit_code == 0
+    rendered = " ".join(result.stdout.split())
+    for flag in (
+        "--output",
+        "--references-dir",
+        "--natural-rock-dir",
+        "--stone-artefact-dir",
+        "--per-class",
+        "--force",
+        "--seed",
+    ):
+        assert flag in rendered
+
+
+def test_build_prototypes_requires_output():
+    result = runner.invoke(app, ["build-prototypes"])
     assert result.exit_code != 0

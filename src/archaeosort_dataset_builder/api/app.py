@@ -33,12 +33,27 @@ from archaeosort_dataset_builder.api.similarity import (
     load_similarity_index,
     search_similar,
 )
+from archaeosort_dataset_builder.api.zero_shot import (
+    ZeroShotError,
+    classify_zero_shot,
+    load_zero_shot_model,
+    parse_label_prompts,
+)
+from archaeosort_dataset_builder.prototypes.prototypes import (
+    PrototypeError,
+    classify_by_prototype,
+    load_prototypes,
+)
 
 MODEL_PATH_ENV = "ARCHAEOSORT_MODEL_PATH"
 MODEL_CLASSES_ENV = "ARCHAEOSORT_MODEL_CLASSES"
 MODEL_DEVICE_ENV = "ARCHAEOSORT_MODEL_DEVICE"
 EMBEDDINGS_DIR_ENV = "ARCHAEOSORT_EMBEDDINGS_DIR"
 CORS_ORIGINS_ENV = "ARCHAEOSORT_CORS_ORIGINS"
+ZEROSHOT_MODEL_ENV = "ARCHAEOSORT_ZEROSHOT_MODEL"
+ZEROSHOT_LABELS_ENV = "ARCHAEOSORT_ZEROSHOT_LABELS"
+ZEROSHOT_DEVICE_ENV = "ARCHAEOSORT_ZEROSHOT_DEVICE"
+PROTOTYPES_PATH_ENV = "ARCHAEOSORT_PROTOTYPES_PATH"
 
 # The frontend (Fase I, frontend/) runs as a separate Next.js dev server on
 # a different port, so the browser treats it as a different origin and
@@ -57,6 +72,10 @@ _state: dict[str, Any] = {
     "error": None,
     "similarity": None,
     "similarity_error": None,
+    "zero_shot": None,
+    "zero_shot_error": None,
+    "prototypes": None,
+    "prototypes_error": None,
 }
 
 
@@ -67,6 +86,10 @@ class HealthResponse(BaseModel):
     device: str | None = None
     similarity_loaded: bool = False
     similarity_size: int | None = None
+    zero_shot_loaded: bool = False
+    zero_shot_labels: list[str] | None = None
+    prototypes_loaded: bool = False
+    prototypes_labels: list[str] | None = None
 
 
 class PredictionResponse(BaseModel):
@@ -134,9 +157,41 @@ async def lifespan(app: FastAPI):
         _state["similarity"] = None
         _state["similarity_error"] = f"{EMBEDDINGS_DIR_ENV} is not set"
 
+    zeroshot_model = os.environ.get(ZEROSHOT_MODEL_ENV)
+    if zeroshot_model:
+        labels_env = os.environ.get(ZEROSHOT_LABELS_ENV)
+        try:
+            prompts = parse_label_prompts(labels_env) if labels_env else None
+            _state["zero_shot"] = load_zero_shot_model(
+                zeroshot_model,
+                prompts=prompts,
+                device=os.environ.get(ZEROSHOT_DEVICE_ENV) or None,
+            )
+            _state["zero_shot_error"] = None
+        except ZeroShotError as exc:
+            _state["zero_shot"] = None
+            _state["zero_shot_error"] = str(exc)
+    else:
+        _state["zero_shot"] = None
+        _state["zero_shot_error"] = f"{ZEROSHOT_MODEL_ENV} is not set"
+
+    prototypes_path = os.environ.get(PROTOTYPES_PATH_ENV)
+    if prototypes_path:
+        try:
+            _state["prototypes"] = load_prototypes(Path(prototypes_path))
+            _state["prototypes_error"] = None
+        except PrototypeError as exc:
+            _state["prototypes"] = None
+            _state["prototypes_error"] = str(exc)
+    else:
+        _state["prototypes"] = None
+        _state["prototypes_error"] = f"{PROTOTYPES_PATH_ENV} is not set"
+
     yield
     _state["bundle"] = None
     _state["similarity"] = None
+    _state["zero_shot"] = None
+    _state["prototypes"] = None
 
 
 app = FastAPI(title="ArchaeoSort Inference API", lifespan=lifespan)
@@ -166,6 +221,9 @@ def health() -> HealthResponse:
         status, model_loaded = "ok", True
         classes, device = bundle.classes, str(bundle.device)
 
+    zero_shot = _state.get("zero_shot")
+    prototypes = _state.get("prototypes")
+
     return HealthResponse(
         status=status,
         model_loaded=model_loaded,
@@ -173,6 +231,10 @@ def health() -> HealthResponse:
         device=device,
         similarity_loaded=similarity is not None,
         similarity_size=len(similarity.paths) if similarity is not None else None,
+        zero_shot_loaded=zero_shot is not None,
+        zero_shot_labels=zero_shot.labels if zero_shot is not None else None,
+        prototypes_loaded=prototypes is not None,
+        prototypes_labels=prototypes.labels if prototypes is not None else None,
     )
 
 
@@ -216,3 +278,39 @@ def similar_image(path_id: int) -> FileResponse:
         raise HTTPException(status_code=404, detail="Indexed image no longer exists on disk.")
 
     return FileResponse(image_path)
+
+
+@app.post("/classify-open", response_model=PredictionResponse)
+async def classify_open(file: UploadFile) -> PredictionResponse:
+    """Open-vocabulary classification via CLIP text prompts (see
+    api/zero_shot.py). Independent of /predict's closed ResNet18
+    classifier -- useful for categories the trained model was never
+    shown (e.g. bone or wood artefacts) without collecting new training
+    data, at the cost of typically lower precision."""
+    zero_shot = _state.get("zero_shot")
+    if zero_shot is None:
+        detail = _state.get("zero_shot_error") or "Zero-shot classifier is not loaded."
+        raise HTTPException(status_code=503, detail=detail)
+
+    image = await _read_uploaded_image(file)
+    result = classify_zero_shot(zero_shot, image)
+    return PredictionResponse(**result)
+
+
+@app.post("/classify-prototype", response_model=PredictionResponse)
+async def classify_prototype(file: UploadFile) -> PredictionResponse:
+    """Open-vocabulary classification via DINOv2 image-to-image nearest
+    class-prototype (see prototypes/prototypes.py, built with
+    'archaeosort build-prototypes'). Compares the uploaded image against
+    a handful of real reference photos per category rather than CLIP text
+    prompts -- a stronger fit for this project's fine-grained
+    natural-vs-worked distinctions, since it reuses the same DINOv2 model
+    already proven on this data by /similar."""
+    prototypes = _state.get("prototypes")
+    if prototypes is None:
+        detail = _state.get("prototypes_error") or "Prototype classifier is not loaded."
+        raise HTTPException(status_code=503, detail=detail)
+
+    image = await _read_uploaded_image(file)
+    result = classify_by_prototype(prototypes, image)
+    return PredictionResponse(**result)
