@@ -58,7 +58,7 @@ def test_build_reference_dataset_local_source_copies_files(tmp_path: Path):
     assert len(copied) == 5
 
 
-def test_build_reference_dataset_reuses_existing_by_default(tmp_path: Path):
+def test_build_reference_dataset_reuses_existing_when_at_target(tmp_path: Path):
     output_dir = tmp_path / "references"
     label_dir = output_dir / "bone_artefact"
     label_dir.mkdir(parents=True)
@@ -66,15 +66,48 @@ def test_build_reference_dataset_reuses_existing_by_default(tmp_path: Path):
         (label_dir / f"{i}.jpg").write_bytes(b"already here")
 
     # A source that would explode if actually called (no network mocking
-    # set up) -- proves reuse short-circuits before touching the network.
+    # set up) -- proves reuse short-circuits before touching the network,
+    # because existing (6) already meets per_class (6).
     manifest = build_reference_dataset(
         output_dir,
         sources={"bone_artefact": CategorySource(kind="met", met_queries=["should not be queried"])},
-        per_class=20,
+        per_class=6,
     )
 
     assert manifest["categories"]["bone_artefact"]["reused_existing"] is True
     assert manifest["categories"]["bone_artefact"]["count"] == 6
+
+
+def test_build_reference_dataset_tops_up_when_below_target(tmp_path: Path, monkeypatch):
+    output_dir = tmp_path / "references"
+    label_dir = output_dir / "bone_artefact"
+    label_dir.mkdir(parents=True)
+    for i in range(3):
+        (label_dir / f"{i:03d}.jpg").write_bytes(b"already here")
+
+    def fake_get_all(url, params=None, headers=None, timeout=None):
+        if "collectionapi.metmuseum.org/public/collection/v1/search" in url:
+            return _FakeResponse(json_data={"objectIDs": [1, 2, 3, 4, 5]})
+        if "collectionapi.metmuseum.org/public/collection/v1/objects" in url:
+            return _FakeResponse(
+                json_data={"isPublicDomain": True, "primaryImageSmall": "https://example.com/img.jpg"}
+            )
+        return _FakeResponse(content=b"fake-image-bytes")
+
+    monkeypatch.setattr("requests.get", fake_get_all)
+
+    manifest = build_reference_dataset(
+        output_dir,
+        sources={"bone_artefact": CategorySource(kind="met", met_queries=["carved bone"])},
+        per_class=8,
+    )
+
+    # 3 pre-existing + 5 newly fetched = 8 total; the 3 original files
+    # must survive untouched (top-up numbers new files from index 3).
+    assert manifest["categories"]["bone_artefact"]["count"] == 8
+    assert len(list((output_dir / "bone_artefact").glob("*.jpg"))) == 8
+    for i in range(3):
+        assert (output_dir / "bone_artefact" / f"{i:03d}.jpg").read_bytes() == b"already here"
 
 
 def test_build_reference_dataset_met_source(tmp_path: Path, monkeypatch):
@@ -133,3 +166,77 @@ def test_build_reference_dataset_local_missing_dir_raises(tmp_path: Path):
             sources={"natural_rock": CategorySource(kind="local", local_dir=None)},
             per_class=5,
         )
+
+
+def test_build_reference_dataset_inaturalist_source(tmp_path: Path, monkeypatch):
+    def fake_get_all(url, params=None, headers=None, timeout=None):
+        if "api.inaturalist.org/v1/observations" in url:
+            page = (params or {}).get("page", 1)
+            if page > 1:
+                return _FakeResponse(json_data={"results": []})
+            return _FakeResponse(
+                json_data={
+                    "results": [
+                        {"photos": [{"id": i, "url": f"https://example.com/photos/{i}/square.jpg"}]}
+                        for i in range(1, 6)
+                    ]
+                }
+            )
+        return _FakeResponse(content=b"fake-image-bytes")
+
+    monkeypatch.setattr("requests.get", fake_get_all)
+
+    output_dir = tmp_path / "references"
+    manifest = build_reference_dataset(
+        output_dir,
+        sources={"natural_bone": CategorySource(kind="inaturalist", inaturalist_queries=["animal bone"])},
+        per_class=5,
+    )
+
+    assert manifest["categories"]["natural_bone"]["count"] == 5
+    assert manifest["categories"]["natural_bone"]["source"] == "inaturalist"
+
+
+def test_build_reference_dataset_multi_source_combines_met_and_commons(tmp_path: Path, monkeypatch):
+    def fake_get_all(url, params=None, headers=None, timeout=None):
+        if "collectionapi.metmuseum.org/public/collection/v1/search" in url:
+            return _FakeResponse(json_data={"objectIDs": [1, 2, 3]})
+        if "collectionapi.metmuseum.org/public/collection/v1/objects" in url:
+            return _FakeResponse(
+                json_data={"isPublicDomain": True, "primaryImageSmall": "https://example.com/img.jpg"}
+            )
+        if "commons.wikimedia.org" in url and (params or {}).get("list") == "categorymembers":
+            return _FakeResponse(
+                json_data={"query": {"categorymembers": [{"title": "File:A.jpg"}, {"title": "File:B.jpg"}]}}
+            )
+        if "commons.wikimedia.org" in url and (params or {}).get("prop") == "imageinfo":
+            return _FakeResponse(
+                json_data={
+                    "query": {
+                        "pages": {
+                            "1": {"imageinfo": [{"thumburl": "https://example.com/a.jpg"}]},
+                            "2": {"imageinfo": [{"thumburl": "https://example.com/b.jpg"}]},
+                        }
+                    }
+                }
+            )
+        return _FakeResponse(content=b"fake-image-bytes")
+
+    monkeypatch.setattr("requests.get", fake_get_all)
+
+    output_dir = tmp_path / "references"
+    manifest = build_reference_dataset(
+        output_dir,
+        sources={
+            "wood_artefact": CategorySource(
+                kind="multi",
+                met_queries=["wood carving"],
+                commons_categories=["Category:Wood_carvings"],
+            )
+        },
+        per_class=5,
+    )
+
+    assert manifest["categories"]["wood_artefact"]["count"] == 5
+    assert "met_museum" in manifest["categories"]["wood_artefact"]["source"]
+    assert "wikimedia_commons" in manifest["categories"]["wood_artefact"]["source"]
