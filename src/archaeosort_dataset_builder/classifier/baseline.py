@@ -46,10 +46,39 @@ class TrainConfig:
     seed: int = 42
     num_workers: int = 0
     device: str | None = None
+    # Robust-model pass: the 6-class dataset (natural_rock/stone_artefact
+    # from the large figshare dataset vs. the scraped bone/wood classes)
+    # is heavily imbalanced (stone_artefact ~2700 train images vs. ~175
+    # for each bone/wood class). Plain CrossEntropyLoss would let the
+    # majority classes dominate the gradient; class_weighted=True scales
+    # each class's loss contribution by compute_class_weights() so a
+    # mistake on a rare class counts as much as one on a common class.
+    class_weighted: bool = False
 
 
 class TrainingError(ValueError):
     """Raised when the training configuration or input dataset is invalid."""
+
+
+def compute_class_weights(targets: list[int], num_classes: int) -> list[float]:
+    """Inverse-frequency weights for ``nn.CrossEntropyLoss(weight=...)``:
+    ``weight_i = total / (num_classes * count_i)``, so a class with fewer
+    training images contributes proportionally more to the loss instead of
+    being drowned out by a majority class. A class absent from `targets`
+    (count 0) gets weight 0.0 -- in practice this shouldn't happen, since
+    build_dataloaders() already requires train/val/test to share the same
+    classes. No torch import here on purpose, so this is testable without
+    the heavy dependency (see build_dataloaders/train_baseline for where
+    the torch-dependent glue lives)."""
+    if num_classes <= 0:
+        raise ValueError("num_classes must be positive")
+
+    counts = [0] * num_classes
+    for target in targets:
+        counts[target] += 1
+
+    total = len(targets)
+    return [(total / (num_classes * count)) if count > 0 else 0.0 for count in counts]
 
 
 def validate_split_layout(data_dir: Path) -> Path:
@@ -244,7 +273,13 @@ def train_baseline(config: TrainConfig) -> dict[str, Any]:
     )
     model = build_model(len(classes), config.freeze_backbone).to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    class_weights_used: list[float] | None = None
+    loss_weight = None
+    if config.class_weighted:
+        train_targets = loaders["train"].dataset.targets
+        class_weights_used = compute_class_weights(train_targets, len(classes))
+        loss_weight = torch.tensor(class_weights_used, dtype=torch.float32, device=device)
+    criterion = nn.CrossEntropyLoss(weight=loss_weight)
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = optim.Adam(trainable_params, lr=config.learning_rate)
 
@@ -305,6 +340,10 @@ def train_baseline(config: TrainConfig) -> dict[str, Any]:
         "classes": classes,
         "device": str(device),
         "freeze_backbone": config.freeze_backbone,
+        "class_weighted": config.class_weighted,
+        "class_weights": (
+            dict(zip(classes, class_weights_used, strict=True)) if class_weights_used else None
+        ),
         "best_validation_accuracy": best_val_accuracy,
         "test_loss": test_loss,
         "test_accuracy": test_accuracy,

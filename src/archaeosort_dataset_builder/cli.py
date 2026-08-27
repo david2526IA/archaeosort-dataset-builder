@@ -397,6 +397,17 @@ def train_baseline_cmd(
         int,
         typer.Option("--seed", help="Random seed."),
     ] = 42,
+    class_weighted: Annotated[
+        bool,
+        typer.Option(
+            "--class-weighted/--no-class-weighted",
+            help=(
+                "Scale each class's loss contribution by inverse frequency, so "
+                "under-represented classes (e.g. bone/wood) count as much as "
+                "majority classes (e.g. stone)."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Train a ResNet18 baseline classifier and evaluate it on the test split."""
     from archaeosort_dataset_builder.classifier.baseline import TrainConfig, train_baseline
@@ -411,6 +422,7 @@ def train_baseline_cmd(
             freeze_backbone=freeze_backbone,
             patience=patience,
             seed=seed,
+            class_weighted=class_weighted,
         )
     )
 
