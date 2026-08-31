@@ -12,6 +12,12 @@ Sources (all public, no API key required):
   - iNaturalist (natural-material photos -- animal bones, driftwood, bark
     -- via the observations search API, filtered to openly licensed
     photos): https://www.inaturalist.org/pages/api+reference
+  - GBIF (Global Biodiversity Information Facility) occurrence search --
+    a huge, free/keyless archive of specimen and observation photos
+    contributed by museums and citizen scientists worldwide, used here as
+    a fourth source for natural-material categories (skeletal/bone and
+    driftwood/bark) to widen photographer/locale/species diversity beyond
+    iNaturalist alone: https://www.gbif.org/developer/occurrence
 
 v2 (robust-model pass): raised the realistic per-class yield by (a) adding
 iNaturalist as a third source for natural-material categories, (b) letting
@@ -22,6 +28,14 @@ here -- the existing Auckland figshare dataset (~5,300 images, see
 datasets/stone_figshare_cropped/) already covers those two classes far
 better than anything scraped in a few hours, and is merged in separately
 by scripts/build_robust_dataset.py.
+
+v3 (broader-coverage pass): added GBIF as a fourth source and substantially
+widened the keyword/category lists for all four categories (more Met
+search terms, more Commons categories, more iNaturalist/GBIF queries) so
+each class draws from a wider variety of museums, regions, and species/
+object types rather than a handful of narrow searches -- the goal is more
+genuine visual diversity per class, not just more images of the same kind
+of photo.
 
 This is deliberately NOT a rigorous, deduplicated, human-reviewed dataset
 -- it is a fast way to get a real, licensed, varied set of photos per
@@ -66,6 +80,7 @@ MET_SEARCH_URL = "https://collectionapi.metmuseum.org/public/collection/v1/searc
 MET_OBJECT_URL = "https://collectionapi.metmuseum.org/public/collection/v1/objects/{object_id}"
 COMMONS_API_URL = "https://commons.wikimedia.org/w/api.php"
 INATURALIST_URL = "https://api.inaturalist.org/v1/observations"
+GBIF_URL = "https://api.gbif.org/v1/occurrence/search"
 USER_AGENT = "ArchaeoSort-DatasetBuilder/1.0 (research prototype; https://github.com)"
 MIN_IMAGES_PER_CLASS = 5
 # Politeness delay between network calls -- these are free public APIs
@@ -81,7 +96,7 @@ class ReferenceDatasetError(Exception):
 class CategorySource:
     """How to source reference images for one open-vocabulary category."""
 
-    kind: str = "multi"  # "local" | "met" | "commons" | "inaturalist" | "multi"
+    kind: str = "multi"  # "local" | "met" | "commons" | "inaturalist" | "gbif" | "multi"
     # "local": a class-folder under an existing dataset to sample from.
     local_dir: Path | None = None
     # Met Museum keyword searches to try, in order, until enough images
@@ -93,6 +108,8 @@ class CategorySource:
     commons_categories: list[str] = field(default_factory=list)
     # iNaturalist observation search terms (natural-material photos).
     inaturalist_queries: list[str] = field(default_factory=list)
+    # GBIF occurrence search terms (natural-material specimen photos).
+    gbif_queries: list[str] = field(default_factory=list)
 
 
 # Default sourcing plan for the four open-vocabulary categories the user
@@ -115,18 +132,55 @@ DEFAULT_SOURCES: dict[str, CategorySource] = {
             "engraved bone",
             "bone pin",
             "bone spoon",
+            "bone fish hook",
+            "bone harpoon",
+            "bone whistle",
+            "bone bead",
+            "bone dice",
+            "bone hairpin",
+            "ivory carving",
+            "antler tool",
+            "horn carving",
+            "scrimshaw",
         ],
-        commons_categories=["Category:Bone_tools", "Category:Objects_made_of_bone"],
+        commons_categories=[
+            "Category:Bone_tools",
+            "Category:Objects_made_of_bone",
+            "Category:Bone_carvings",
+            "Category:Ivory_carvings",
+            "Category:Scrimshaw",
+            "Category:Antler_tools",
+        ],
     ),
     "natural_bone": CategorySource(
         kind="multi",
-        commons_categories=["Category:Animal_bones", "Category:Skeletons_of_mammals"],
+        commons_categories=[
+            "Category:Animal_bones",
+            "Category:Skeletons_of_mammals",
+            "Category:Skulls",
+            "Category:Bones",
+            "Category:Fish_skeletons",
+            "Category:Bird_skeletons",
+        ],
         inaturalist_queries=[
             "animal skeleton",
             "animal bone",
             "skull bone",
             "bone remains",
             "vertebra",
+            "deer antler",
+            "bird skull",
+            "fish skeleton",
+            "rib bone",
+            "jaw bone",
+            "whale bone",
+        ],
+        gbif_queries=[
+            "skeleton",
+            "skull",
+            "bone",
+            "vertebra",
+            "antler",
         ],
     ),
     "wood_artefact": CategorySource(
@@ -142,13 +196,50 @@ DEFAULT_SOURCES: dict[str, CategorySource] = {
             "wooden spoon",
             "wooden comb",
             "wood netsuke",
+            "wooden staff",
+            "wooden panel carving",
+            "wooden chest",
+            "carved wooden door",
+            "wooden totem",
+            "wood inlay",
+            "wooden furniture carved",
         ],
-        commons_categories=["Category:Wood_carvings", "Category:Wooden_sculptures"],
+        commons_categories=[
+            "Category:Wood_carvings",
+            "Category:Wooden_sculptures",
+            "Category:Wooden_masks",
+            "Category:Wooden_furniture",
+            "Category:Marquetry",
+            "Category:Totem_poles",
+        ],
     ),
     "natural_wood": CategorySource(
         kind="multi",
-        commons_categories=["Category:Driftwood", "Category:Tree_bark", "Category:Firewood"],
-        inaturalist_queries=["driftwood", "tree bark", "fallen log", "dead wood", "rotten log"],
+        commons_categories=[
+            "Category:Driftwood",
+            "Category:Tree_bark",
+            "Category:Firewood",
+            "Category:Dead_wood",
+            "Category:Tree_stumps",
+            "Category:Fallen_trees",
+        ],
+        inaturalist_queries=[
+            "driftwood",
+            "tree bark",
+            "fallen log",
+            "dead wood",
+            "rotten log",
+            "tree stump",
+            "tree root",
+            "decaying wood",
+            "woodland floor log",
+        ],
+        gbif_queries=[
+            "driftwood",
+            "deadwood",
+            "tree bark",
+            "fallen tree",
+        ],
     ),
 }
 
@@ -383,6 +474,70 @@ def _fetch_inaturalist_images(
     return results
 
 
+def _fetch_gbif_images(
+    queries: list[str], limit: int, exclude_urls: frozenset[str] = frozenset()
+) -> list[tuple[bytes, str]]:
+    """Search GBIF occurrence records with attached photos for each query,
+    taking one image per occurrence, until `limit` is reached.
+    `exclude_urls` skips images already downloaded in a previous top-up
+    run. GBIF aggregates specimen/observation photos from museums and
+    citizen-science projects worldwide -- useful as a fourth, independent
+    source of natural-material photos (different contributor pool than
+    iNaturalist alone)."""
+    results: list[tuple[bytes, str]] = []
+    seen_keys: set[int] = set()
+
+    for query in queries:
+        if len(results) >= limit:
+            break
+        for page_offset in range(0, 150, 50):
+            if len(results) >= limit:
+                break
+            try:
+                data = _http_get_json(
+                    GBIF_URL,
+                    {
+                        "q": query,
+                        "mediaType": "StillImage",
+                        "limit": 50,
+                        "offset": page_offset,
+                    },
+                )
+            except _FETCH_EXCEPTIONS as exc:
+                logger.debug("GBIF search failed for %r offset %s: %s", query, page_offset, exc)
+                break
+
+            occurrences = data.get("results") or []
+            if not occurrences:
+                break
+
+            for occurrence in occurrences:
+                if len(results) >= limit:
+                    break
+                key = occurrence.get("key")
+                if key in seen_keys:
+                    continue
+                media_list = occurrence.get("media") or []
+                image_url = next(
+                    (m.get("identifier") for m in media_list if m.get("identifier")), None
+                )
+                if not image_url or image_url in exclude_urls:
+                    continue
+                seen_keys.add(key)
+                time.sleep(_REQUEST_DELAY_SECONDS)
+                try:
+                    image_bytes = _download_bytes(image_url)
+                except _FETCH_EXCEPTIONS as exc:
+                    logger.debug("Download failed for %s: %s", image_url, exc)
+                    continue
+                results.append((image_bytes, image_url))
+                _heartbeat("gbif", len(results), limit)
+
+            time.sleep(_REQUEST_DELAY_SECONDS)
+
+    return results
+
+
 def _sample_local_images(directory: Path, limit: int) -> list[Path]:
     directory = Path(directory)
     candidates = [
@@ -406,6 +561,8 @@ def _fetch_for_source(
         return _fetch_commons_images(source.commons_categories, per_class, exclude_urls), "wikimedia_commons"
     if source.kind == "inaturalist":
         return _fetch_inaturalist_images(source.inaturalist_queries, per_class, exclude_urls), "inaturalist"
+    if source.kind == "gbif":
+        return _fetch_gbif_images(source.gbif_queries, per_class, exclude_urls), "gbif"
     if source.kind == "multi":
         fetched: list[tuple[bytes, str]] = []
         used: list[str] = []
@@ -422,6 +579,11 @@ def _fetch_for_source(
                 _fetch_inaturalist_images(source.inaturalist_queries, per_class - len(fetched), exclude_urls)
             )
             used.append("inaturalist")
+        if source.gbif_queries and len(fetched) < per_class:
+            fetched.extend(
+                _fetch_gbif_images(source.gbif_queries, per_class - len(fetched), exclude_urls)
+            )
+            used.append("gbif")
         return fetched, "+".join(used) if used else "multi"
     raise ReferenceDatasetError(f"Unknown CategorySource.kind {source.kind!r}.")
 

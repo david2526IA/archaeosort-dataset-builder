@@ -36,6 +36,7 @@ from archaeosort_dataset_builder.prototypes.reference_dataset import (
 from archaeosort_dataset_builder.splitter.dataset_splitter import (
     build_split_dataset,
     discover_images_by_class,
+    prepare_output_directory,
     save_report,
 )
 
@@ -123,6 +124,16 @@ def main() -> None:
     images_by_class = discover_images_by_class(RAW_POOL_DIR)
     for class_name, images in sorted(images_by_class.items()):
         print(f"  {class_name}: {len(images)} images total", flush=True)
+
+    # Always rebuild OUTPUT_DIR from scratch: re-running over a stale
+    # previous split led transfer_file to hit "destination already
+    # exists" -> hardlink fails -> falls back to shutil.copy2 -> can hit a
+    # transient PermissionError if OneDrive/AV briefly locks the file that
+    # was just (re)written a moment earlier, aborting the whole build
+    # partway through with an inconsistent, half-updated dataset on disk.
+    # A clean wipe means every transfer_file call hardlinks into a
+    # brand-new path, never colliding with anything.
+    prepare_output_directory(OUTPUT_DIR, force=True)
 
     report = build_split_dataset(
         images_by_class=images_by_class,

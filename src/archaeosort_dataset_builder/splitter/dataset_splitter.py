@@ -102,6 +102,31 @@ def prepare_output_directory(
     output_dir.mkdir(parents=True, exist_ok=True)
 
 
+def _copy2_with_retry(source_path: Path, destination_path: Path, attempts: int = 5) -> None:
+    """shutil.copy2, retrying on a transient PermissionError.
+
+    On Windows, a destination file that already exists (e.g. re-running
+    the pipeline over a previous output) can be transiently locked by
+    OneDrive sync, Windows Search indexing, or antivirus scanning right
+    after being written -- shutil.copy2 then raises PermissionError
+    (WinError 32) even though the lock clears a moment later. Retrying a
+    few times with a short backoff turns that into a non-issue instead of
+    aborting the whole dataset build partway through.
+    """
+    import time
+
+    last_error: OSError | None = None
+    for attempt in range(attempts):
+        try:
+            shutil.copy2(source_path, destination_path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(0.3 * (attempt + 1))
+    if last_error is not None:
+        raise last_error
+
+
 def transfer_file(
     source_path: Path,
     destination_path: Path,
@@ -110,12 +135,12 @@ def transfer_file(
     destination_path.parent.mkdir(parents=True, exist_ok=True)
 
     if copy_files:
-        shutil.copy2(source_path, destination_path)
+        _copy2_with_retry(source_path, destination_path)
     else:
         try:
             destination_path.hardlink_to(source_path.resolve())
         except OSError:
-            shutil.copy2(source_path, destination_path)
+            _copy2_with_retry(source_path, destination_path)
 
 
 def build_split_dataset(

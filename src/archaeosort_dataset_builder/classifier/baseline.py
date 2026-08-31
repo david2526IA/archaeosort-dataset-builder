@@ -54,6 +54,29 @@ class TrainConfig:
     # each class's loss contribution by compute_class_weights() so a
     # mistake on a rare class counts as much as one on a common class.
     class_weighted: bool = False
+    # Backbone architecture. "resnet18" (default, matches the original
+    # legacy recipe) plus stronger/newer torchvision options for when more
+    # capacity is worth the extra training time: "resnet34", "resnet50",
+    # "convnext_tiny", "efficientnet_v2_s".
+    backbone: str = "resnet18"
+    # Label smoothing for nn.CrossEntropyLoss (0.0 = off). A small value
+    # (e.g. 0.05-0.1) is standard modern practice for classifiers trained
+    # on modest per-class sample counts -- it discourages the model from
+    # becoming overconfident on the majority classes, which pairs well
+    # with class_weighted for an imbalanced dataset like this one.
+    label_smoothing: float = 0.0
+    # Automatic mixed precision (torch.cuda.amp): trains in float16 where
+    # safe, float32 where numerically required. Meaningfully faster on a
+    # CUDA GPU with no accuracy cost in practice; a no-op (silently
+    # ignored) when running on CPU.
+    mixed_precision: bool = False
+    # Data augmentation strength for the training transform. "standard"
+    # keeps the original recipe (RandomResizedCrop + horizontal flip
+    # only). "strong" adds RandAugment + RandomErasing, which is current
+    # standard practice for improving generalization on a classifier
+    # trained from a modest number of images per class -- exactly the
+    # bone/wood classes this robust model struggles with.
+    augmentation: str = "standard"
 
 
 class TrainingError(ValueError):
@@ -108,21 +131,34 @@ def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def _build_transforms(image_size: int, train: bool):
+def _build_transforms(image_size: int, train: bool, augmentation: str = "standard"):
     from torchvision import transforms
 
     imagenet_mean = [0.485, 0.456, 0.406]
     imagenet_std = [0.229, 0.224, 0.225]
 
     if train:
-        return transforms.Compose(
-            [
-                transforms.RandomResizedCrop(image_size, scale=(0.8, 1.0)),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(imagenet_mean, imagenet_std),
-            ]
-        )
+        steps = [
+            transforms.RandomResizedCrop(image_size, scale=(0.8, 1.0)),
+            transforms.RandomHorizontalFlip(),
+        ]
+        if augmentation == "strong":
+            # RandAugment: a small, automatically-searched policy of
+            # standard photometric/geometric ops (rotate, shear, contrast,
+            # posterize, ...) applied with random magnitude each call --
+            # current standard practice for improving generalization when
+            # training on a modest number of images per class.
+            steps.append(transforms.RandAugment())
+        steps += [
+            transforms.ToTensor(),
+            transforms.Normalize(imagenet_mean, imagenet_std),
+        ]
+        if augmentation == "strong":
+            # RandomErasing runs on the tensor (after ToTensor), randomly
+            # blanking a small rectangular patch -- teaches the model not
+            # to rely on any single localized region of the object.
+            steps.append(transforms.RandomErasing(p=0.25))
+        return transforms.Compose(steps)
 
     return transforms.Compose(
         [
@@ -139,6 +175,7 @@ def build_dataloaders(
     image_size: int = 224,
     batch_size: int = 16,
     num_workers: int = 0,
+    augmentation: str = "standard",
 ) -> tuple[dict[str, Any], list[str]]:
     """Build train/val/test DataLoaders from a build()-shaped dataset.
 
@@ -153,7 +190,7 @@ def build_dataloaders(
     resolved = validate_split_layout(data_dir)
 
     train_ds = datasets.ImageFolder(
-        resolved / "train", transform=_build_transforms(image_size, train=True)
+        resolved / "train", transform=_build_transforms(image_size, train=True, augmentation=augmentation)
     )
     val_ds = datasets.ImageFolder(
         resolved / "val", transform=_build_transforms(image_size, train=False)
@@ -182,24 +219,58 @@ def build_dataloaders(
     return loaders, train_ds.classes
 
 
-def build_model(num_classes: int, freeze_backbone: bool):
+_BACKBONE_FACTORIES = {
+    # name -> (constructor kwarg name for the pretrained weights, weights
+    # enum, name of the final classification layer to replace)
+    "resnet18": ("resnet18", "ResNet18_Weights", "fc"),
+    "resnet34": ("resnet34", "ResNet34_Weights", "fc"),
+    "resnet50": ("resnet50", "ResNet50_Weights", "fc"),
+    "convnext_tiny": ("convnext_tiny", "ConvNeXt_Tiny_Weights", "classifier"),
+    "efficientnet_v2_s": ("efficientnet_v2_s", "EfficientNet_V2_S_Weights", "classifier"),
+}
+
+
+def build_model(num_classes: int, freeze_backbone: bool, backbone: str = "resnet18"):
+    """Build a pretrained-backbone classifier with its final layer replaced
+    for `num_classes`. Defaults to resnet18 (the original recipe); also
+    supports resnet34/resnet50 (more capacity, same architecture family)
+    and convnext_tiny/efficientnet_v2_s (modern architectures that
+    generally outperform ResNet18 on small-to-medium datasets, at the cost
+    of more parameters and slower training)."""
     from torch import nn
     from torchvision import models
 
-    model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+    if backbone not in _BACKBONE_FACTORIES:
+        raise TrainingError(
+            f"Unknown backbone {backbone!r}. Choose one of: {sorted(_BACKBONE_FACTORIES)}."
+        )
+    constructor_name, weights_enum_name, head_attr = _BACKBONE_FACTORIES[backbone]
+    constructor = getattr(models, constructor_name)
+    weights_enum = getattr(models, weights_enum_name)
+    model = constructor(weights=weights_enum.IMAGENET1K_V1)
 
     if freeze_backbone:
         for param in model.parameters():
             param.requires_grad = False
 
-    model.fc = nn.Linear(model.fc.in_features, num_classes)
+    head = getattr(model, head_attr)
+    if isinstance(head, nn.Sequential):
+        # convnext_tiny / efficientnet_v2_s expose `classifier` as a small
+        # Sequential ending in the Linear layer -- replace just that layer.
+        in_features = head[-1].in_features
+        head[-1] = nn.Linear(in_features, num_classes)
+    else:
+        setattr(model, head_attr, nn.Linear(head.in_features, num_classes))
     return model
 
 
-def _run_epoch(model, loader, criterion, optimizer, device, train: bool) -> tuple[float, float]:
+def _run_epoch(
+    model, loader, criterion, optimizer, device, train: bool, scaler=None
+) -> tuple[float, float]:
     import torch
 
     model.train() if train else model.eval()
+    use_amp = scaler is not None and train
 
     total_loss = 0.0
     correct = 0
@@ -212,12 +283,19 @@ def _run_epoch(model, loader, criterion, optimizer, device, train: bool) -> tupl
             if train:
                 optimizer.zero_grad()
 
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-
-            if train:
-                loss.backward()
-                optimizer.step()
+            if use_amp:
+                with torch.autocast(device_type=device.type, dtype=torch.float16):
+                    outputs = model(images)
+                    loss = criterion(outputs, labels)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+                if train:
+                    loss.backward()
+                    optimizer.step()
 
             total_loss += loss.item() * images.size(0)
             correct += (outputs.argmax(dim=1) == labels).sum().item()
@@ -269,9 +347,13 @@ def train_baseline(config: TrainConfig) -> dict[str, Any]:
     )
 
     loaders, classes = build_dataloaders(
-        config.data_dir, config.image_size, config.batch_size, config.num_workers
+        config.data_dir,
+        config.image_size,
+        config.batch_size,
+        config.num_workers,
+        augmentation=config.augmentation,
     )
-    model = build_model(len(classes), config.freeze_backbone).to(device)
+    model = build_model(len(classes), config.freeze_backbone, config.backbone).to(device)
 
     class_weights_used: list[float] | None = None
     loss_weight = None
@@ -279,9 +361,12 @@ def train_baseline(config: TrainConfig) -> dict[str, Any]:
         train_targets = loaders["train"].dataset.targets
         class_weights_used = compute_class_weights(train_targets, len(classes))
         loss_weight = torch.tensor(class_weights_used, dtype=torch.float32, device=device)
-    criterion = nn.CrossEntropyLoss(weight=loss_weight)
+    criterion = nn.CrossEntropyLoss(weight=loss_weight, label_smoothing=config.label_smoothing)
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = optim.Adam(trainable_params, lr=config.learning_rate)
+    # AMP only helps on CUDA; silently skip it on CPU rather than erroring,
+    # so the same config works on either device.
+    scaler = torch.cuda.amp.GradScaler() if (config.mixed_precision and device.type == "cuda") else None
 
     output_dir = Path(config.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -294,7 +379,7 @@ def train_baseline(config: TrainConfig) -> dict[str, Any]:
 
     for epoch in range(1, config.epochs + 1):
         train_loss, train_accuracy = _run_epoch(
-            model, loaders["train"], criterion, optimizer, device, train=True
+            model, loaders["train"], criterion, optimizer, device, train=True, scaler=scaler
         )
         val_loss, val_accuracy = _run_epoch(
             model, loaders["val"], criterion, optimizer, device, train=False
@@ -340,10 +425,14 @@ def train_baseline(config: TrainConfig) -> dict[str, Any]:
         "classes": classes,
         "device": str(device),
         "freeze_backbone": config.freeze_backbone,
+        "backbone": config.backbone,
         "class_weighted": config.class_weighted,
         "class_weights": (
             dict(zip(classes, class_weights_used, strict=True)) if class_weights_used else None
         ),
+        "label_smoothing": config.label_smoothing,
+        "mixed_precision": scaler is not None,
+        "augmentation": config.augmentation,
         "best_validation_accuracy": best_val_accuracy,
         "test_loss": test_loss,
         "test_accuracy": test_accuracy,

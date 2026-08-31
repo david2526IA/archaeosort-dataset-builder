@@ -408,6 +408,44 @@ def train_baseline_cmd(
             ),
         ),
     ] = False,
+    backbone: Annotated[
+        str,
+        typer.Option(
+            "--backbone",
+            help=(
+                "Model architecture: resnet18 (default), resnet34, resnet50, "
+                "convnext_tiny, or efficientnet_v2_s. The non-resnet18 options "
+                "are more capable but slower to train."
+            ),
+        ),
+    ] = "resnet18",
+    label_smoothing: Annotated[
+        float,
+        typer.Option(
+            "--label-smoothing",
+            min=0.0,
+            max=1.0,
+            help="Label smoothing factor for the loss (0.0 = off, 0.05-0.1 is typical).",
+        ),
+    ] = 0.0,
+    mixed_precision: Annotated[
+        bool,
+        typer.Option(
+            "--amp/--no-amp",
+            help="Use automatic mixed precision on CUDA for faster training (no-op on CPU).",
+        ),
+    ] = False,
+    augmentation: Annotated[
+        str,
+        typer.Option(
+            "--augmentation",
+            help=(
+                "Training-time data augmentation strength: 'standard' (crop + "
+                "flip only) or 'strong' (adds RandAugment + RandomErasing, "
+                "recommended when training on few images per class)."
+            ),
+        ),
+    ] = "standard",
 ) -> None:
     """Train a ResNet18 baseline classifier and evaluate it on the test split."""
     from archaeosort_dataset_builder.classifier.baseline import TrainConfig, train_baseline
@@ -423,6 +461,10 @@ def train_baseline_cmd(
             patience=patience,
             seed=seed,
             class_weighted=class_weighted,
+            backbone=backbone,
+            label_smoothing=label_smoothing,
+            mixed_precision=mixed_precision,
+            augmentation=augmentation,
         )
     )
 

@@ -240,3 +240,32 @@ def test_build_reference_dataset_multi_source_combines_met_and_commons(tmp_path:
     assert manifest["categories"]["wood_artefact"]["count"] == 5
     assert "met_museum" in manifest["categories"]["wood_artefact"]["source"]
     assert "wikimedia_commons" in manifest["categories"]["wood_artefact"]["source"]
+
+
+def test_build_reference_dataset_gbif_source(tmp_path: Path, monkeypatch):
+    def fake_get_all(url, params=None, headers=None, timeout=None):
+        if "api.gbif.org/v1/occurrence/search" in url:
+            offset = (params or {}).get("offset", 0)
+            if offset > 0:
+                return _FakeResponse(json_data={"results": []})
+            return _FakeResponse(
+                json_data={
+                    "results": [
+                        {"key": i, "media": [{"identifier": f"https://example.com/gbif/{i}.jpg"}]}
+                        for i in range(1, 6)
+                    ]
+                }
+            )
+        return _FakeResponse(content=b"fake-image-bytes")
+
+    monkeypatch.setattr("requests.get", fake_get_all)
+
+    output_dir = tmp_path / "references"
+    manifest = build_reference_dataset(
+        output_dir,
+        sources={"natural_bone": CategorySource(kind="gbif", gbif_queries=["skeleton"])},
+        per_class=5,
+    )
+
+    assert manifest["categories"]["natural_bone"]["count"] == 5
+    assert manifest["categories"]["natural_bone"]["source"] == "gbif"
