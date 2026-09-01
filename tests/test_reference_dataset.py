@@ -8,7 +8,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from archaeosort_dataset_builder.prototypes.reference_dataset import (
     CategorySource,
     ReferenceDatasetError,
@@ -269,3 +268,121 @@ def test_build_reference_dataset_gbif_source(tmp_path: Path, monkeypatch):
 
     assert manifest["categories"]["natural_bone"]["count"] == 5
     assert manifest["categories"]["natural_bone"]["source"] == "gbif"
+
+
+def test_build_reference_dataset_idigbio_source(tmp_path: Path, monkeypatch):
+    def fake_get_all(url, params=None, headers=None, timeout=None):
+        if "search.idigbio.org/v2/search/media" in url:
+            return _FakeResponse(
+                json_data={
+                    "items": [
+                        {"data": {"ac:accessURI": f"https://example.com/idigbio/{i}.jpg"}}
+                        for i in range(1, 6)
+                    ]
+                }
+            )
+        return _FakeResponse(content=b"fake-image-bytes")
+
+    monkeypatch.setattr("requests.get", fake_get_all)
+
+    output_dir = tmp_path / "references"
+    manifest = build_reference_dataset(
+        output_dir,
+        sources={"natural_bone": CategorySource(kind="idigbio", idigbio_queries=["skeleton"])},
+        per_class=5,
+    )
+
+    assert manifest["categories"]["natural_bone"]["count"] == 5
+    assert manifest["categories"]["natural_bone"]["source"] == "idigbio"
+
+
+def test_build_reference_dataset_smithsonian_source_skipped_without_key(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("SMITHSONIAN_API_KEY", raising=False)
+
+    def fake_get_all(url, params=None, headers=None, timeout=None):
+        raise AssertionError("should not call the network when SMITHSONIAN_API_KEY is unset")
+
+    monkeypatch.setattr("requests.get", fake_get_all)
+
+    output_dir = tmp_path / "references"
+    with pytest.raises(ReferenceDatasetError):
+        build_reference_dataset(
+            output_dir,
+            sources={"bone_artefact": CategorySource(kind="smithsonian", smithsonian_queries=["bone tool"])},
+            per_class=5,
+        )
+
+
+def test_build_reference_dataset_smithsonian_source_with_key(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SMITHSONIAN_API_KEY", "fake-key")
+
+    def fake_get_all(url, params=None, headers=None, timeout=None):
+        if "api.si.edu/openaccess/api/v1.0/search" in url:
+            start = (params or {}).get("start", 0)
+            if start > 0:
+                return _FakeResponse(json_data={"response": {"rows": []}})
+            return _FakeResponse(
+                json_data={
+                    "response": {
+                        "rows": [
+                            {
+                                "id": f"si-{i}",
+                                "content": {
+                                    "descriptiveNonRepeating": {
+                                        "online_media": {
+                                            "media": [
+                                                {
+                                                    "type": "Images",
+                                                    "content": f"https://example.com/si/{i}.jpg",
+                                                }
+                                            ]
+                                        }
+                                    }
+                                },
+                            }
+                            for i in range(1, 6)
+                        ]
+                    }
+                }
+            )
+        return _FakeResponse(content=b"fake-image-bytes")
+
+    monkeypatch.setattr("requests.get", fake_get_all)
+
+    output_dir = tmp_path / "references"
+    manifest = build_reference_dataset(
+        output_dir,
+        sources={"bone_artefact": CategorySource(kind="smithsonian", smithsonian_queries=["bone tool"])},
+        per_class=5,
+    )
+
+    assert manifest["categories"]["bone_artefact"]["count"] == 5
+    assert manifest["categories"]["bone_artefact"]["source"] == "smithsonian"
+
+
+def test_build_reference_dataset_europeana_source_with_key(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("EUROPEANA_API_KEY", "fake-key")
+
+    def fake_get_all(url, params=None, headers=None, timeout=None):
+        if "api.europeana.eu/record/v2/search.json" in url:
+            start = (params or {}).get("start", 1)
+            if start > 1:
+                return _FakeResponse(json_data={"items": []})
+            return _FakeResponse(
+                json_data={
+                    "items": [{"edmPreview": f"https://example.com/eu/{i}.jpg"} for i in range(1, 6)]
+                }
+            )
+        return _FakeResponse(content=b"fake-image-bytes")
+
+    monkeypatch.setattr("requests.get", fake_get_all)
+
+    output_dir = tmp_path / "references"
+    manifest = build_reference_dataset(
+        output_dir,
+        sources={"wood_artefact": CategorySource(kind="europeana", europeana_queries=["wood carving"])},
+        per_class=5,
+    )
+
+    assert manifest["categories"]["wood_artefact"]["count"] == 5
+    assert manifest["categories"]["wood_artefact"]["source"] == "europeana"

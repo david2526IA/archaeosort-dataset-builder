@@ -37,6 +37,26 @@ object types rather than a handful of narrow searches -- the goal is more
 genuine visual diversity per class, not just more images of the same kind
 of photo.
 
+v4 (more sources, larger targets): added three more sources so the
+achievable per-class total can realistically go well beyond 500:
+  - iDigBio (Integrated Digitized Biocollections) -- an aggregator of
+    US natural-history specimen records with images (bone/skeletal
+    material especially), free and keyless:
+    https://www.idigbio.org/wiki/index.php/IDigBio_Search_API
+  - Smithsonian Open Access -- 2.8 million CC0 images across the
+    Smithsonian's museums, including National Museum of Natural History
+    anthropology and mineral-sciences collections (bone/stone/wood
+    artefacts and specimens). Requires a free API key from
+    https://api.data.gov/signup/ passed via the SMITHSONIAN_API_KEY
+    env var; the source is silently skipped (logged once) if unset.
+    https://edan.si.edu/openaccess/docs/
+  - Europeana -- an aggregator of European cultural-heritage
+    collections (museum artefacts from institutions Met/Smithsonian
+    don't cover). Requires a free API key from
+    https://pro.europeana.eu/page/get-api passed via the
+    EUROPEANA_API_KEY env var; silently skipped (logged once) if unset.
+    https://api.europeana.eu/en
+
 This is deliberately NOT a rigorous, deduplicated, human-reviewed dataset
 -- it is a fast way to get a real, licensed, varied set of photos per
 category to train a genuine CNN classifier on. Network access is required
@@ -81,6 +101,9 @@ MET_OBJECT_URL = "https://collectionapi.metmuseum.org/public/collection/v1/objec
 COMMONS_API_URL = "https://commons.wikimedia.org/w/api.php"
 INATURALIST_URL = "https://api.inaturalist.org/v1/observations"
 GBIF_URL = "https://api.gbif.org/v1/occurrence/search"
+IDIGBIO_MEDIA_URL = "https://search.idigbio.org/v2/search/media"
+SMITHSONIAN_SEARCH_URL = "https://api.si.edu/openaccess/api/v1.0/search"
+EUROPEANA_SEARCH_URL = "https://api.europeana.eu/record/v2/search.json"
 USER_AGENT = "ArchaeoSort-DatasetBuilder/1.0 (research prototype; https://github.com)"
 MIN_IMAGES_PER_CLASS = 5
 # Politeness delay between network calls -- these are free public APIs
@@ -96,7 +119,7 @@ class ReferenceDatasetError(Exception):
 class CategorySource:
     """How to source reference images for one open-vocabulary category."""
 
-    kind: str = "multi"  # "local" | "met" | "commons" | "inaturalist" | "gbif" | "multi"
+    kind: str = "multi"  # "local" | "met" | "commons" | "inaturalist" | "gbif" | "idigbio" | "smithsonian" | "europeana" | "multi"
     # "local": a class-folder under an existing dataset to sample from.
     local_dir: Path | None = None
     # Met Museum keyword searches to try, in order, until enough images
@@ -110,6 +133,12 @@ class CategorySource:
     inaturalist_queries: list[str] = field(default_factory=list)
     # GBIF occurrence search terms (natural-material specimen photos).
     gbif_queries: list[str] = field(default_factory=list)
+    # iDigBio media-record search terms (US natural-history specimens).
+    idigbio_queries: list[str] = field(default_factory=list)
+    # Smithsonian Open Access search terms (needs SMITHSONIAN_API_KEY).
+    smithsonian_queries: list[str] = field(default_factory=list)
+    # Europeana search terms (needs EUROPEANA_API_KEY).
+    europeana_queries: list[str] = field(default_factory=list)
 
 
 # Default sourcing plan for the four open-vocabulary categories the user
@@ -151,6 +180,9 @@ DEFAULT_SOURCES: dict[str, CategorySource] = {
             "Category:Scrimshaw",
             "Category:Antler_tools",
         ],
+        idigbio_queries=["bone tool", "worked bone", "carved antler"],
+        smithsonian_queries=["bone tool", "bone comb", "carved bone", "bone needle"],
+        europeana_queries=["bone tool", "carved bone", "bone comb", "bone needle"],
     ),
     "natural_bone": CategorySource(
         kind="multi",
@@ -182,6 +214,9 @@ DEFAULT_SOURCES: dict[str, CategorySource] = {
             "vertebra",
             "antler",
         ],
+        idigbio_queries=["skeleton", "skull", "vertebra", "antler", "bone"],
+        smithsonian_queries=["animal skeleton", "mammal skull", "vertebra"],
+        europeana_queries=["animal skeleton", "animal bone", "skull"],
     ),
     "wood_artefact": CategorySource(
         kind="multi",
@@ -212,6 +247,9 @@ DEFAULT_SOURCES: dict[str, CategorySource] = {
             "Category:Marquetry",
             "Category:Totem_poles",
         ],
+        idigbio_queries=["wood artifact", "carved wood"],
+        smithsonian_queries=["wood carving", "wooden bowl", "carved wood figure"],
+        europeana_queries=["wood carving", "wooden sculpture", "wooden mask"],
     ),
     "natural_wood": CategorySource(
         kind="multi",
@@ -240,6 +278,9 @@ DEFAULT_SOURCES: dict[str, CategorySource] = {
             "tree bark",
             "fallen tree",
         ],
+        idigbio_queries=["driftwood", "tree bark", "wood specimen"],
+        smithsonian_queries=["driftwood", "tree bark", "dead wood"],
+        europeana_queries=["driftwood", "tree bark", "fallen tree"],
     ),
 }
 
@@ -538,6 +579,208 @@ def _fetch_gbif_images(
     return results
 
 
+def _fetch_idigbio_images(
+    queries: list[str], limit: int, exclude_urls: frozenset[str] = frozenset()
+) -> list[tuple[bytes, str]]:
+    """Search iDigBio media records (US natural-history specimen images,
+    e.g. from myfossil.org/museum collections) for each query, taking one
+    image per media record, until `limit` is reached. No API key needed.
+    `exclude_urls` skips images already downloaded in a previous top-up
+    run."""
+    results: list[tuple[bytes, str]] = []
+
+    for query in queries:
+        if len(results) >= limit:
+            break
+        try:
+            data = _http_get_json(
+                IDIGBIO_MEDIA_URL,
+                {
+                    "rq": json.dumps({"hasImage": True, "q": query}),
+                    "limit": min(limit - len(results), 100),
+                },
+            )
+        except _FETCH_EXCEPTIONS as exc:
+            logger.debug("iDigBio search failed for %r: %s", query, exc)
+            continue
+
+        items = data.get("items") or []
+        for item in items:
+            if len(results) >= limit:
+                break
+            record = item.get("data") or {}
+            image_url = record.get("ac:accessURI")
+            if not image_url or image_url in exclude_urls:
+                continue
+            time.sleep(_REQUEST_DELAY_SECONDS)
+            try:
+                image_bytes = _download_bytes(image_url)
+            except _FETCH_EXCEPTIONS as exc:
+                logger.debug("Download failed for %s: %s", image_url, exc)
+                continue
+            results.append((image_bytes, image_url))
+            _heartbeat("idigbio", len(results), limit)
+
+    return results
+
+
+_smithsonian_key_warned = False
+
+
+def _fetch_smithsonian_images(
+    queries: list[str], limit: int, exclude_urls: frozenset[str] = frozenset()
+) -> list[tuple[bytes, str]]:
+    """Search the Smithsonian Open Access API (2.8M CC0 images, including
+    National Museum of Natural History anthropology/mineral-sciences
+    collections) for each query, taking one image per object record, until
+    `limit` is reached. Needs a free API key from https://api.data.gov/signup/
+    in the SMITHSONIAN_API_KEY env var -- silently returns [] (logged once)
+    if unset, so this source is opt-in without breaking the rest of the
+    pipeline. `exclude_urls` skips images already downloaded in a previous
+    top-up run."""
+    import os
+
+    global _smithsonian_key_warned
+    api_key = os.environ.get("SMITHSONIAN_API_KEY")
+    if not api_key:
+        if not _smithsonian_key_warned:
+            logger.info(
+                "SMITHSONIAN_API_KEY not set -- skipping Smithsonian Open "
+                "Access source (free key at https://api.data.gov/signup/)."
+            )
+            _smithsonian_key_warned = True
+        return []
+
+    results: list[tuple[bytes, str]] = []
+    seen_ids: set[str] = set()
+
+    for query in queries:
+        if len(results) >= limit:
+            break
+        for start in range(0, 150, 50):
+            if len(results) >= limit:
+                break
+            try:
+                data = _http_get_json(
+                    SMITHSONIAN_SEARCH_URL,
+                    {"q": query, "api_key": api_key, "rows": 50, "start": start},
+                )
+            except _FETCH_EXCEPTIONS as exc:
+                logger.debug("Smithsonian search failed for %r start %s: %s", query, start, exc)
+                break
+
+            rows = (data.get("response") or {}).get("rows") or []
+            if not rows:
+                break
+
+            for row in rows:
+                if len(results) >= limit:
+                    break
+                row_id = row.get("id")
+                if row_id in seen_ids:
+                    continue
+                content = row.get("content") or {}
+                media = (
+                    (content.get("descriptiveNonRepeating") or {})
+                    .get("online_media", {})
+                    .get("media")
+                    or []
+                )
+                image_url = next(
+                    (m.get("content") for m in media if m.get("type") == "Images" and m.get("content")),
+                    None,
+                )
+                if not image_url or image_url in exclude_urls:
+                    continue
+                seen_ids.add(row_id)
+                time.sleep(_REQUEST_DELAY_SECONDS)
+                try:
+                    image_bytes = _download_bytes(image_url)
+                except _FETCH_EXCEPTIONS as exc:
+                    logger.debug("Download failed for %s: %s", image_url, exc)
+                    continue
+                results.append((image_bytes, image_url))
+                _heartbeat("smithsonian", len(results), limit)
+
+            time.sleep(_REQUEST_DELAY_SECONDS)
+
+    return results
+
+
+_europeana_key_warned = False
+
+
+def _fetch_europeana_images(
+    queries: list[str], limit: int, exclude_urls: frozenset[str] = frozenset()
+) -> list[tuple[bytes, str]]:
+    """Search Europeana (aggregated European cultural-heritage collections)
+    for each query, taking one image per record, until `limit` is reached.
+    Needs a free API key from https://pro.europeana.eu/page/get-api in the
+    EUROPEANA_API_KEY env var -- silently returns [] (logged once) if
+    unset. `exclude_urls` skips images already downloaded in a previous
+    top-up run."""
+    import os
+
+    global _europeana_key_warned
+    api_key = os.environ.get("EUROPEANA_API_KEY")
+    if not api_key:
+        if not _europeana_key_warned:
+            logger.info(
+                "EUROPEANA_API_KEY not set -- skipping Europeana source "
+                "(free key at https://pro.europeana.eu/page/get-api)."
+            )
+            _europeana_key_warned = True
+        return []
+
+    results: list[tuple[bytes, str]] = []
+
+    for query in queries:
+        if len(results) >= limit:
+            break
+        for start in range(1, 151, 50):
+            if len(results) >= limit:
+                break
+            try:
+                data = _http_get_json(
+                    EUROPEANA_SEARCH_URL,
+                    {
+                        "wskey": api_key,
+                        "query": query,
+                        "media": "true",
+                        "rows": 50,
+                        "start": start,
+                    },
+                )
+            except _FETCH_EXCEPTIONS as exc:
+                logger.debug("Europeana search failed for %r start %s: %s", query, start, exc)
+                break
+
+            items = data.get("items") or []
+            if not items:
+                break
+
+            for item in items:
+                if len(results) >= limit:
+                    break
+                image_url = item.get("edmPreview") or item.get("edmIsShownBy")
+                if isinstance(image_url, list):
+                    image_url = image_url[0] if image_url else None
+                if not image_url or image_url in exclude_urls:
+                    continue
+                time.sleep(_REQUEST_DELAY_SECONDS)
+                try:
+                    image_bytes = _download_bytes(image_url)
+                except _FETCH_EXCEPTIONS as exc:
+                    logger.debug("Download failed for %s: %s", image_url, exc)
+                    continue
+                results.append((image_bytes, image_url))
+                _heartbeat("europeana", len(results), limit)
+
+            time.sleep(_REQUEST_DELAY_SECONDS)
+
+    return results
+
+
 def _sample_local_images(directory: Path, limit: int) -> list[Path]:
     directory = Path(directory)
     candidates = [
@@ -563,6 +806,18 @@ def _fetch_for_source(
         return _fetch_inaturalist_images(source.inaturalist_queries, per_class, exclude_urls), "inaturalist"
     if source.kind == "gbif":
         return _fetch_gbif_images(source.gbif_queries, per_class, exclude_urls), "gbif"
+    if source.kind == "idigbio":
+        return _fetch_idigbio_images(source.idigbio_queries, per_class, exclude_urls), "idigbio"
+    if source.kind == "smithsonian":
+        return (
+            _fetch_smithsonian_images(source.smithsonian_queries, per_class, exclude_urls),
+            "smithsonian",
+        )
+    if source.kind == "europeana":
+        return (
+            _fetch_europeana_images(source.europeana_queries, per_class, exclude_urls),
+            "europeana",
+        )
     if source.kind == "multi":
         fetched: list[tuple[bytes, str]] = []
         used: list[str] = []
@@ -584,6 +839,25 @@ def _fetch_for_source(
                 _fetch_gbif_images(source.gbif_queries, per_class - len(fetched), exclude_urls)
             )
             used.append("gbif")
+        if source.idigbio_queries and len(fetched) < per_class:
+            fetched.extend(
+                _fetch_idigbio_images(source.idigbio_queries, per_class - len(fetched), exclude_urls)
+            )
+            used.append("idigbio")
+        if source.smithsonian_queries and len(fetched) < per_class:
+            fetched.extend(
+                _fetch_smithsonian_images(
+                    source.smithsonian_queries, per_class - len(fetched), exclude_urls
+                )
+            )
+            used.append("smithsonian")
+        if source.europeana_queries and len(fetched) < per_class:
+            fetched.extend(
+                _fetch_europeana_images(
+                    source.europeana_queries, per_class - len(fetched), exclude_urls
+                )
+            )
+            used.append("europeana")
         return fetched, "+".join(used) if used else "multi"
     raise ReferenceDatasetError(f"Unknown CategorySource.kind {source.kind!r}.")
 
