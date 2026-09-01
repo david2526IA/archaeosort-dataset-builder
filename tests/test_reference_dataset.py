@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from archaeosort_dataset_builder.prototypes.reference_dataset import (
     CategorySource,
     ReferenceDatasetError,
